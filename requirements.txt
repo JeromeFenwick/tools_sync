@@ -1,0 +1,6 @@
+# Qt6 GUI 依赖
+PyQt6>=6.6.0
+
+# 原有依赖
+customtkinter>=5.2.0
+Pillow>=10.0.0

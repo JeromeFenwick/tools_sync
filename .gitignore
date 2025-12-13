@@ -181,3 +181,10 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Qt 相关
+*.qrc
+*.ui~
+moc_*.cpp
+qrc_*.cpp
+ui_*.h

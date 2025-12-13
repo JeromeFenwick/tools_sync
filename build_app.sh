@@ -1,8 +1,9 @@
 #!/bin/bash
-# 文件同步工具打包脚本
+# 文件同步工具打包脚本 (PyQt6 版本)
 
 echo "================================"
 echo "文件同步工具 macOS App 打包脚本"
+echo "PyQt6 Edition"
 echo "================================"
 echo ""
 
@@ -20,7 +21,7 @@ source venv/bin/activate
 # 安装依赖
 echo "📦 安装依赖..."
 pip install --upgrade pip
-pip install customtkinter pillow py2app
+pip install PyQt6 pillow py2app
 
 # 清理旧的打包文件
 echo "🧹 清理旧的打包文件..."

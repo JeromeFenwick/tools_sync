@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller 打包配置文件
+PyInstaller 打包配置文件 (PyQt6 版本)
 用于将文件同步工具打包成单个 exe 可执行文件
 
 使用方法：
@@ -15,13 +15,15 @@ PyInstaller 打包配置文件
 block_cipher = None
 
 a = Analysis(
-    ['gui_modern.py'],  # 入口文件
+    ['gui_qt6.py'],  # 入口文件 (修改为 PyQt6 版本)
     pathex=[],
     binaries=[],
     datas=[],  # 不打包数据库文件
     hiddenimports=[
-        'customtkinter',
-        'tkinter',
+        'PyQt6',
+        'PyQt6.QtCore',
+        'PyQt6.QtGui',
+        'PyQt6.QtWidgets',
         'sqlite3',
         'hashlib',
         'zipfile',
@@ -34,7 +36,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['customtkinter', 'tkinter'],  # 排除 CustomTkinter 相关
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
