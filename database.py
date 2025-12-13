@@ -246,37 +246,99 @@ class Database:
     
     # ==================== 统计数据 ====================
     
-    def get_backup_statistics(self, days=30):
+    def get_backup_statistics(self, days=30, dimension='backup_date'):
         """
         获取备份统计数据
         
         Args:
             days: 统计最近多少天的数据
+            dimension: 统计维度，可选值:
+                - 'backup_date': 按备份日期统计
+                - 'file_create_date': 按文件创建日期统计
+                - 'file_modify_date': 按文件修改日期统计
         
         Returns:
             dict: 包含日期、文件数量、备份次数的统计数据
         """
+        from datetime import datetime, timedelta
         conn = self._get_conn()
         cursor = conn.cursor()
         
-        # 获取最近N天的备份历史
-        cursor.execute('''
-            SELECT 
-                DATE(sync_time) as date,
-                COUNT(*) as backup_count,
-                SUM(file_count) as total_files
-            FROM sync_history
-            WHERE sync_time >= datetime('now', '-' || ? || ' days')
-            GROUP BY DATE(sync_time)
-            ORDER BY date ASC
-        ''', (days,))
+        if dimension == 'backup_date':
+            # 按备份日期统计
+            cursor.execute('''
+                SELECT 
+                    DATE(sync_time) as date,
+                    COUNT(*) as backup_count,
+                    SUM(file_count) as total_files
+                FROM sync_history
+                WHERE sync_time >= datetime('now', '-' || ? || ' days')
+                GROUP BY DATE(sync_time)
+                ORDER BY date ASC
+            ''', (days,))
+        elif dimension == 'file_modify_date':
+            # 按文件修改日期统计
+            cursor.execute('''
+                SELECT 
+                    DATE(modify_time, 'unixepoch') as date,
+                    0 as backup_count,
+                    COUNT(*) as total_files
+                FROM file_info
+                WHERE modify_time >= strftime('%s', datetime('now', '-' || ? || ' days'))
+                GROUP BY DATE(modify_time, 'unixepoch')
+                ORDER BY date ASC
+            ''', (days,))
+        else:  # file_create_date - 暂时使用modify_time作为替代
+            # 注意: SQLite 没有内置的创建时间，这里使用修改时间作为示例
+            cursor.execute('''
+                SELECT 
+                    DATE(modify_time, 'unixepoch') as date,
+                    0 as backup_count,
+                    COUNT(*) as total_files
+                FROM file_info
+                WHERE modify_time >= strftime('%s', datetime('now', '-' || ? || ' days'))
+                GROUP BY DATE(modify_time, 'unixepoch')
+                ORDER BY date ASC
+            ''', (days,))
         
         results = cursor.fetchall()
         
+        # 构建完整的日期范围（包括没有备份的日期）
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days - 1)
+        
+        # 创建日期到数据的映射
+        date_map = {}
+        for row in results:
+            date_str = row['date']
+            date_map[date_str] = {
+                'backup_count': row['backup_count'],
+                'file_count': row['total_files'] or 0
+            }
+        
+        # 生成完整的日期序列和数据
+        all_dates = []
+        all_backup_counts = []
+        all_file_counts = []
+        
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime('%Y-%m-%d')
+            all_dates.append(date_str)
+            
+            if date_str in date_map:
+                all_backup_counts.append(date_map[date_str]['backup_count'])
+                all_file_counts.append(date_map[date_str]['file_count'])
+            else:
+                all_backup_counts.append(0)
+                all_file_counts.append(0)
+            
+            current_date += timedelta(days=1)
+        
         return {
-            'dates': [row['date'] for row in results],
-            'backup_counts': [row['backup_count'] for row in results],
-            'file_counts': [row['total_files'] for row in results]
+            'dates': all_dates,
+            'backup_counts': all_backup_counts,
+            'file_counts': all_file_counts
         }
     
     def get_storage_statistics(self):

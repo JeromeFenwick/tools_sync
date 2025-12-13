@@ -1048,6 +1048,8 @@ class ModernSyncGUI(RoundedWindow):
                 font-size: 24px;
                 font-weight: bold;
                 font-family: "Microsoft YaHei";
+                padding: 0px;  /* 移除内边距，避免影响布局 */
+                margin: 0px;  /* 移除外边距 */
             }}
             
             #subtitle {{
@@ -2036,47 +2038,149 @@ class ModernSyncGUI(RoundedWindow):
         layout.setContentsMargins(40, 30, 40, 30)
         layout.setSpacing(20)
         
-        # 标题
+        # 标题（固定在顶部，不参与居中）
         title = QLabel("📈 备份趋势分析")
         title.setObjectName("pageTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(title)
         
-        # 获取统计数据
-        stats = self.db.get_backup_statistics(30)
+        # Tab页签和热力图的容器（用于垂直居中）
+        center_container = QWidget()
+        center_layout = QVBoxLayout(center_container)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(0)
         
-        # 创建图表面板
-        chart_panel = QFrame()
-        chart_panel.setObjectName("panel")
-        chart_layout = QVBoxLayout(chart_panel)
-        chart_layout.setContentsMargins(30, 30, 30, 30)
+        # Tab页签容器
+        tab_container = QWidget()
+        tab_layout = QHBoxLayout(tab_container)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        tab_layout.setSpacing(0)
         
-        if stats['dates']:
-            # 统计信息
-            total_backups = sum(stats['backup_counts'])
-            total_files = sum(stats['file_counts'])
-            avg_files = total_files // total_backups if total_backups > 0 else 0
+        # 创建三个Tab选项卡
+        self.dimension_tabs = {}
+        tab_items = [
+            ("📅 备份日期", "backup_date"),
+            ("📝 文件修改日期", "file_modify_date"),
+            ("✨ 文件创建日期", "file_create_date")
+        ]
+        
+        for i, (label, dimension) in enumerate(tab_items):
+            tab_btn = QPushButton(label)
+            tab_btn.setFixedHeight(40)
+            tab_btn.setMinimumWidth(140)
+            tab_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             
-            info_text = QLabel(
-                f"最近30天统计\n"
-                f"备份总次数: {total_backups} 次\n"
-                f"文件总数: {total_files} 个\n"
-                f"平均每次: {avg_files} 个文件"
-            )
-            info_text.setObjectName("sectionTitle")
-            chart_layout.addWidget(info_text)
+            # 设置Tab选项卡样式
+            if self.current_theme == 'light':
+                tab_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: transparent;
+                        border: none;
+                        border-bottom: 3px solid transparent;
+                        padding: 8px 20px;
+                        font-size: 13px;
+                        font-weight: bold;
+                        color: #888888;
+                        border-radius: 0px;
+                    }
+                    QPushButton:hover {
+                        color: #3B8ED0;
+                        background-color: rgba(59, 142, 208, 0.05);
+                        border-top-left-radius: 8px;
+                        border-top-right-radius: 8px;
+                        border-bottom-left-radius: 0px;
+                        border-bottom-right-radius: 0px;
+                    }
+                    QPushButton[selected="true"] {
+                        color: #3B8ED0;
+                        border-bottom: 3px solid #3B8ED0;
+                        background-color: rgba(59, 142, 208, 0.1);
+                        border-top-left-radius: 8px;
+                        border-top-right-radius: 8px;
+                        border-bottom-left-radius: 0px;
+                        border-bottom-right-radius: 0px;
+                    }
+                """)
+            else:
+                tab_btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: transparent;
+                        border: none;
+                        border-bottom: 3px solid transparent;
+                        padding: 8px 20px;
+                        font-size: 13px;
+                        font-weight: bold;
+                        color: #888888;
+                        border-radius: 0px;
+                    }
+                    QPushButton:hover {
+                        color: #3B8ED0;
+                        background-color: rgba(59, 142, 208, 0.1);
+                        border-top-left-radius: 8px;
+                        border-top-right-radius: 8px;
+                        border-bottom-left-radius: 0px;
+                        border-bottom-right-radius: 0px;
+                    }
+                    QPushButton[selected="true"] {
+                        color: #3B8ED0;
+                        border-bottom: 3px solid #3B8ED0;
+                        background-color: rgba(59, 142, 208, 0.15);
+                        border-top-left-radius: 8px;
+                        border-top-right-radius: 8px;
+                        border-bottom-left-radius: 0px;
+                        border-bottom-right-radius: 0px;
+                    }
+                """)
             
-            # 简单柱状图
-            chart_widget = self._create_bar_chart(stats)
-            chart_layout.addWidget(chart_widget)
+            # 绑定点击事件
+            tab_btn.clicked.connect(lambda checked, d=dimension: self._on_tab_clicked(d))
+            tab_layout.addWidget(tab_btn)
+            self.dimension_tabs[dimension] = tab_btn
+        
+        # 添加弹性空间
+        tab_layout.addStretch()
+        
+        # 添加底部分隔线
+        separator = QFrame()
+        separator.setFixedHeight(1)
+        if self.current_theme == 'light':
+            separator.setStyleSheet("background-color: #E0E0E0;")
         else:
-            no_data = QLabel("⚠️ 暂无备份数据")
-            no_data.setObjectName("sectionTitle")
-            no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            chart_layout.addWidget(no_data)
+            separator.setStyleSheet("background-color: #404040;")
         
-        layout.addWidget(chart_panel)
+        # 将Tab和分隔线添加到垂直布局
+        tab_wrapper = QWidget()
+        tab_wrapper_layout = QVBoxLayout(tab_wrapper)
+        tab_wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        tab_wrapper_layout.setSpacing(0)
+        tab_wrapper_layout.addWidget(tab_container)
+        tab_wrapper_layout.addWidget(separator)
         
-        # 返回按钮
+        center_layout.addWidget(tab_wrapper)
+        
+        # 创建图表容器（用于动态更新）
+        self.chart_container = QWidget()
+        self.chart_container_layout = QVBoxLayout(self.chart_container)
+        self.chart_container_layout.setContentsMargins(0, 0, 0, 0)  # 取消所有边距
+        self.chart_container_layout.setSpacing(0)
+        
+        # 将图表添加到center_container
+        center_layout.addWidget(self.chart_container)
+        
+        # 添加上方弹性空间，使Tab+热力图垂直居中
+        layout.addStretch()
+        
+        # 添加center_container（包含Tab、热力图）
+        layout.addWidget(center_container)
+        
+        # 加载默认统计数据，并设置默认Tab选中状态
+        self._set_active_tab('backup_date')
+        self._load_chart_data('backup_date')
+        
+        # 添加下方弹性空间，使Tab+热力图垂直居中
+        layout.addStretch()
+        
+        # 返回按钮（固定在底部）
         back_btn = QPushButton("← 返回设置")
         back_btn.setObjectName("primaryBtn")
         back_btn.setFixedHeight(50)
@@ -2085,23 +2189,226 @@ class ModernSyncGUI(RoundedWindow):
         
         self.content_layout.addWidget(container)
     
+    def _on_tab_clicked(self, dimension):
+        """Tab页签点击回调"""
+        self._set_active_tab(dimension)
+        self._load_chart_data(dimension)
+    
+    def _set_active_tab(self, active_dimension):
+        """设置Tab选中状态"""
+        for dimension, tab_btn in self.dimension_tabs.items():
+            if dimension == active_dimension:
+                tab_btn.setProperty("selected", "true")
+            else:
+                tab_btn.setProperty("selected", "false")
+            # 刷新样式
+            tab_btn.style().unpolish(tab_btn)
+            tab_btn.style().polish(tab_btn)
+            tab_btn.update()
+    
+    def _on_dimension_changed(self, index):
+        """统计维度变更回调（保留兼容）"""
+        dimension = self.dimension_combo.currentData()
+        self._load_chart_data(dimension)
+    
+    def _load_chart_data(self, dimension='backup_date'):
+        """加载图表数据"""
+        # 清空当前图表
+        for i in reversed(range(self.chart_container_layout.count())):
+            widget = self.chart_container_layout.itemAt(i).widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+        
+        # 获取统计数据（近一年）
+        stats = self.db.get_backup_statistics(365, dimension)
+        
+        # 创建图表面板
+        chart_panel = QFrame()
+        chart_panel.setObjectName("panel")
+        chart_layout = QVBoxLayout(chart_panel)
+        chart_layout.setContentsMargins(30, 15, 30, 30)  # 减小上边距
+        
+        if stats['dates']:
+            # 统计信息（左对齐）
+            total_backups = sum(stats['backup_counts'])
+            total_files = sum(stats['file_counts'])
+            
+            # 根据维度调整显示文本
+            if dimension == 'backup_date':
+                info_text = QLabel(
+                    f"最近一年统计\n"
+                    f"备份总次数: {total_backups} 次\n"
+                    f"文件总数: {total_files} 个\n"
+                )
+            elif dimension == 'file_modify_date':
+                info_text = QLabel(
+                    f"最近一年统计\n"
+                    f"修改文件总数: {total_files} 个\n"
+                    f"最近有修改的日子: {len([c for c in stats['file_counts'] if c > 0])} 天\n"
+                )
+            else:  # file_create_date
+                info_text = QLabel(
+                    f"最近一年统计\n"
+                    f"创建文件总数: {total_files} 个\n"
+                    f"最近有创建的日子: {len([c for c in stats['file_counts'] if c > 0])} 天\n"
+                )
+            
+            info_text.setObjectName("sectionTitle")
+            info_text.setAlignment(Qt.AlignmentFlag.AlignLeft)  # 文本居左
+            chart_layout.addWidget(info_text)
+            
+            # GitHub风格热力图
+            chart_widget = self._create_bar_chart(stats)
+            chart_layout.addWidget(chart_widget)
+            
+            # 添加图例说明（居中）
+            legend_container = QWidget()
+            legend_layout = QHBoxLayout(legend_container)
+            legend_layout.setContentsMargins(0, 10, 0, 0)
+            legend_layout.setSpacing(10)
+            
+            # 添加左侧弹性空间使图例居中
+            legend_layout.addStretch()
+            
+            legend_label = QLabel("活跃度:")
+            legend_label.setObjectName("sectionTitle")
+            # 根据主题设置字体样式和颜色
+            if self.current_theme == 'light':
+                legend_label.setStyleSheet("font-size: 11px; color: #586069; font-weight: bold;")
+            else:
+                legend_label.setStyleSheet("font-size: 11px; color: #C9D1D9; font-weight: bold;")
+            legend_layout.addWidget(legend_label)
+            
+            # 根据主题选择颜色
+            if self.current_theme == 'light':
+                legend_colors = ["#EBEDF0", "#9BE9A8", "#40C463", "#30A14E", "#216E39"]
+                text_color = "#586069"
+            else:
+                legend_colors = ["#161B22", "#0E4429", "#006D32", "#26A641", "#39D353"]
+                text_color = "#C9D1D9"  # 提升暗黑模式下的文字亮度
+            
+            # 绘制图例色块
+            for i, color in enumerate(legend_colors):
+                color_box = QLabel()
+                color_box.setFixedSize(12, 12)
+                color_box.setStyleSheet(f"background-color: {color}; border-radius: 2px;")
+                legend_layout.addWidget(color_box)
+                if i == 0:
+                    low_label = QLabel("低")
+                    low_label.setStyleSheet(f"font-size: 11px; color: {text_color}; font-weight: normal;")
+                    legend_layout.addWidget(low_label)
+                elif i == len(legend_colors) - 1:
+                    high_label = QLabel("高")
+                    high_label.setStyleSheet(f"font-size: 11px; color: {text_color}; font-weight: normal;")
+                    legend_layout.addWidget(high_label)
+            
+            # 添加右侧弹性空间使图例居中
+            legend_layout.addStretch()
+            chart_layout.addWidget(legend_container)
+        else:
+            no_data = QLabel("⚠️ 暂无数据")
+            no_data.setObjectName("sectionTitle")
+            no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chart_layout.addWidget(no_data)
+        
+        self.chart_container_layout.addWidget(chart_panel)
+    
     def _create_bar_chart(self, stats):
-        """创建柱状图"""
+        """创建GitHub风格热力图"""
         chart_widget = QFrame()
         chart_widget.setObjectName("chartFrame")
-        chart_widget.setMinimumHeight(400)
+        chart_widget.setMinimumHeight(180)
         
-        # 自定义绘图
-        class BarChartWidget(QWidget):
+        # 自定义热力图绘图
+        class HeatmapWidget(QWidget):
             def __init__(self, data, theme='dark', parent=None):
                 super().__init__(parent)
                 self.dates = data['dates']
                 self.file_counts = data['file_counts']
                 self.theme = theme
-                self.setMinimumHeight(350)
+                self.setMinimumHeight(160)
+                self.setMouseTracking(True)  # 启用鼠标跟踪
+                
+                # 计算热力图数据：按周组织
+                self.weeks_data = self._organize_by_weeks()
+                self.hover_cell = None  # 当前悬停的单元格
+            
+            def _organize_by_weeks(self):
+                """将日期数据按周组织成7行（周日到周六）"""
+                from datetime import datetime
+                
+                weeks = []
+                current_week = [None] * 7  # 一周7天
+                
+                for i, date_str in enumerate(self.dates):
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                    weekday = date_obj.weekday()  # 0=周一, 6=周日
+                    # 转换为周日=0, 周一=1, ..., 周六=6
+                    day_index = (weekday + 1) % 7
+                    
+                    # 如果是周日（新的一周开始）并且当前周不为空
+                    if day_index == 0 and any(cell is not None for cell in current_week):
+                        weeks.append(current_week)
+                        current_week = [None] * 7
+                    
+                    current_week[day_index] = {
+                        'date': date_str,
+                        'count': self.file_counts[i],
+                        'display_date': date_obj.strftime('%m月%d日')
+                    }
+                
+                # 添加最后一周
+                if any(cell is not None for cell in current_week):
+                    weeks.append(current_week)
+                
+                return weeks
+            
+            def _get_color_for_count(self, count, max_count):
+                """根据文件数量返回热力图颜色（GitHub风格）"""
+                if count == 0:
+                    # 无活动
+                    if self.theme == 'light':
+                        return QColor("#EBEDF0")
+                    else:
+                        return QColor("#161B22")
+                
+                # 计算强度等级（0-4）
+                if max_count == 0:
+                    level = 0
+                else:
+                    ratio = count / max_count
+                    if ratio < 0.25:
+                        level = 1
+                    elif ratio < 0.5:
+                        level = 2
+                    elif ratio < 0.75:
+                        level = 3
+                    else:
+                        level = 4
+                
+                # GitHub绿色配色方案
+                if self.theme == 'light':
+                    colors = [
+                        "#EBEDF0",  # 0: 无
+                        "#9BE9A8",  # 1: 低
+                        "#40C463",  # 2: 中低
+                        "#30A14E",  # 3: 中高
+                        "#216E39"   # 4: 高
+                    ]
+                else:
+                    colors = [
+                        "#161B22",  # 0: 无
+                        "#0E4429",  # 1: 低
+                        "#006D32",  # 2: 中低
+                        "#26A641",  # 3: 中高
+                        "#39D353"   # 4: 高
+                    ]
+                
+                return QColor(colors[level])
             
             def paintEvent(self, event):
-                if not self.dates:
+                if not self.weeks_data:
                     return
                 
                 painter = QPainter(self)
@@ -2110,56 +2417,140 @@ class ModernSyncGUI(RoundedWindow):
                 # 计算绘图区域
                 width = self.width()
                 height = self.height()
-                margin = 50
-                chart_width = width - 2 * margin
-                chart_height = height - 2 * margin
+                
+                # 单元格大小（根据周数动态调整）
+                num_weeks = len(self.weeks_data)
+                margin_left = 60
+                margin_top = 20
+                margin_right = 20
+                
+                # 计算可用宽度和最佳单元格大小
+                available_width = width - margin_left - margin_right
+                cell_spacing = 2
+                # 根据周数计算单元格大小，最大6，最多12
+                cell_size = max(6, min(12, (available_width - (num_weeks - 1) * cell_spacing) // num_weeks))
                 
                 # 根据主题设置颜色
                 if self.theme == 'light':
-                    bg_color = QColor("#F5F5F5")  # 浅灰色背景
-                    text_color = QColor("#2B2B2B")  # 深色文字
-                    grid_color = QColor("#E0E0E0")  # 网格线
+                    text_color = QColor("#2B2B2B")
+                    label_color = QColor("#586069")
                 else:
-                    bg_color = QColor("#2A2A2A")  # 深色背景
-                    text_color = QColor("#E0E0E0")  # 浅色文字
-                    grid_color = QColor("#404040")  # 网格线
+                    text_color = QColor("#E0E0E0")
+                    label_color = QColor("#8B949E")
                 
-                # 绘制背景
-                painter.fillRect(margin, margin, chart_width, chart_height, bg_color)
+                # 绘制星期标签（只在单元格足够大时显示）
+                if cell_size >= 10:
+                    painter.setPen(label_color)
+                    painter.setFont(QFont("Microsoft YaHei", 8))
+                    weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+                    for i, day in enumerate(weekdays):
+                        if i % 2 == 1:  # 只显示奇数行标签，避免拥挤
+                            y = margin_top + i * (cell_size + cell_spacing) + cell_size // 2
+                            painter.drawText(5, y - 5, margin_left - 10, cell_size + 10,
+                                           Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, day)
                 
-                # 绘制网格线（水平）
-                painter.setPen(QPen(grid_color, 1))
-                for i in range(5):
-                    y = margin + (chart_height // 4) * i
-                    painter.drawLine(margin, int(y), margin + chart_width, int(y))
+                # 计算最大值用于颜色映射
+                max_count = max(self.file_counts) if self.file_counts else 1
                 
-                # 计算数据范围
-                max_value = max(self.file_counts) if self.file_counts else 1
-                bar_width = chart_width // len(self.dates) - 10
+                # 绘制热力图格子
+                for week_idx, week in enumerate(self.weeks_data):
+                    for day_idx, cell_data in enumerate(week):
+                        if cell_data is None:
+                            continue
+                        
+                        x = margin_left + week_idx * (cell_size + cell_spacing)
+                        y = margin_top + day_idx * (cell_size + cell_spacing)
+                        
+                        # 获取颜色
+                        color = self._get_color_for_count(cell_data['count'], max_count)
+                        
+                        # 绘制圆角矩形
+                        painter.setBrush(color)
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.drawRoundedRect(x, y, cell_size, cell_size, 2, 2)
+                        
+                        # 如果鼠标悬停在此单元格上，绘制边框
+                        if self.hover_cell and self.hover_cell == (week_idx, day_idx):
+                            painter.setPen(QPen(text_color, 2))
+                            painter.setBrush(Qt.BrushStyle.NoBrush)
+                            painter.drawRoundedRect(x-1, y-1, cell_size+2, cell_size+2, 2, 2)
                 
-                # 绘制柱子
-                for i, (date, count) in enumerate(zip(self.dates, self.file_counts)):
-                    bar_height = (count / max_value) * chart_height * 0.8
-                    x = margin + i * (chart_width // len(self.dates)) + 5
-                    y = margin + chart_height - bar_height
-                    
-                    # 柱子颜色渐变
-                    gradient_color = QColor(47, 165, 114)  # #2FA572
-                    painter.fillRect(int(x), int(y), bar_width, int(bar_height), gradient_color)
-                    
-                    # 显示数值
-                    painter.setPen(text_color)
-                    painter.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
-                    painter.drawText(int(x), int(y - 5), bar_width, 20, 
-                                   Qt.AlignmentFlag.AlignCenter, str(count))
-                    
-                    # 显示日期（更清晰）
-                    painter.setFont(QFont("Microsoft YaHei", 9))
-                    date_str = date[-5:]  # 只显示 MM-DD
-                    painter.drawText(int(x), margin + chart_height + 10, bar_width, 20,
-                                   Qt.AlignmentFlag.AlignCenter, date_str)
+                # 绘制月份标签（仅在每个月的第一周显示）
+                painter.setPen(label_color)
+                painter.setFont(QFont("Microsoft YaHei", 8))
+                drawn_months = set()
+                last_month = None
+                for week_idx, week in enumerate(self.weeks_data):
+                    # 找到这一周的第一个有效日期
+                    for cell_data in week:
+                        if cell_data:
+                            from datetime import datetime
+                            date_obj = datetime.strptime(cell_data['date'], '%Y-%m-%d')
+                            month = date_obj.strftime('%Y-%m')
+                            month_label = date_obj.strftime('%m月')
+                            
+                            # 只在月份变化时显示
+                            if month != last_month:
+                                x = margin_left + week_idx * (cell_size + cell_spacing)
+                                painter.drawText(x, 5, 50, 15, Qt.AlignmentFlag.AlignLeft, month_label)
+                                last_month = month
+                            break
+            
+            def mouseMoveEvent(self, event):
+                """鼠标移动事件 - 检测悬停的单元格"""
+                pos = event.pos()
+                
+                # 使用与paintEvent相同的计算逻辑
+                width = self.width()
+                num_weeks = len(self.weeks_data)
+                margin_left = 60
+                margin_top = 20
+                margin_right = 20
+                
+                available_width = width - margin_left - margin_right
+                cell_spacing = 2
+                cell_size = max(6, min(12, (available_width - (num_weeks - 1) * cell_spacing) // num_weeks))
+                
+                # 查找鼠标所在的单元格
+                hover_found = False
+                for week_idx, week in enumerate(self.weeks_data):
+                    for day_idx, cell_data in enumerate(week):
+                        if cell_data is None:
+                            continue
+                        
+                        x = margin_left + week_idx * (cell_size + cell_spacing)
+                        y = margin_top + day_idx * (cell_size + cell_spacing)
+                        
+                        # 检查鼠标是否在单元格内
+                        if (x <= pos.x() <= x + cell_size and 
+                            y <= pos.y() <= y + cell_size):
+                            if self.hover_cell != (week_idx, day_idx):
+                                self.hover_cell = (week_idx, day_idx)
+                                self.update()  # 触发重绘
+                                
+                                # 显示tooltip
+                                tooltip_text = f"{cell_data['display_date']}\n文件数: {cell_data['count']}"
+                                QToolTip.setFont(QFont("Microsoft YaHei", 10))
+                                QToolTip.showText(event.globalPosition().toPoint(), tooltip_text, self)
+                            hover_found = True
+                            break
+                    if hover_found:
+                        break
+                
+                # 如果鼠标不在任何单元格上
+                if not hover_found and self.hover_cell is not None:
+                    self.hover_cell = None
+                    self.update()
+                    QToolTip.hideText()
+            
+            def leaveEvent(self, event):
+                """鼠标离开控件"""
+                if self.hover_cell is not None:
+                    self.hover_cell = None
+                    self.update()
+                    QToolTip.hideText()
         
-        chart = BarChartWidget(stats, self.current_theme, chart_widget)
+        chart = HeatmapWidget(stats, self.current_theme, chart_widget)
         chart_layout = QVBoxLayout(chart_widget)
         chart_layout.setContentsMargins(0, 0, 0, 0)
         chart_layout.addWidget(chart)
@@ -2208,9 +2599,9 @@ class ModernSyncGUI(RoundedWindow):
             # 顶部间距
             chart_layout.addSpacing(20)
             
-            # 饼图
-            pie_chart = self._create_pie_chart(storage_stats, total_size)
-            chart_layout.addWidget(pie_chart)
+            # 树形图（Treemap）
+            treemap_chart = self._create_treemap_chart(storage_stats, total_size)
+            chart_layout.addWidget(treemap_chart)
             
             # 详细列表
             chart_layout.addSpacing(20)
