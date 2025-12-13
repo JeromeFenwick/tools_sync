@@ -47,15 +47,17 @@ class FloatingBubble(QWidget):
         
         # 根据主题设置颜色
         if theme == 'light':
-            bg_start = "rgba(248, 248, 250, 0.95)"
-            bg_end = "rgba(240, 240, 242, 0.95)"
+            # 明亮模式：中饱和度蓝绿渐变
+            bg_start = "rgba(200, 235, 225, 0.95)"
+            bg_end = "rgba(210, 235, 250, 0.95)"
             text_color = "#2B2B2B"
-            border_color = "rgba(47, 165, 114, 0.9)"
+            border_color = "rgba(150, 200, 185, 0.7)"
         else:
-            bg_start = "rgba(28, 28, 30, 0.95)"
-            bg_end = "rgba(20, 20, 22, 0.95)"
+            # 暗黑模式：中饱和度深色渐变
+            bg_start = "rgba(28, 52, 58, 0.95)"
+            bg_end = "rgba(20, 45, 60, 0.95)"
             text_color = "#E8E8E8"
-            border_color = "rgba(47, 165, 114, 0.9)"
+            border_color = "rgba(80, 150, 125, 0.7)"
         
         # 设置内容
         layout = QVBoxLayout(self)
@@ -63,6 +65,7 @@ class FloatingBubble(QWidget):
         
         self.label = QLabel(text)
         self.label.setWordWrap(True)
+        self.label.setOpenExternalLinks(True)  # 启用超链接功能
         self.label.setStyleSheet(f"""
             QLabel {{
                 background: qlineargradient(
@@ -146,7 +149,7 @@ class RoundedWindow(QMainWindow):
         self._drag_pos = QPoint()
         
     def paintEvent(self, event):
-        """绘制圆角背景"""
+        """绘制圆角背景和渐变效果"""
         try:
             painter = QPainter(self)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -159,8 +162,23 @@ class RoundedWindow(QMainWindow):
                 self.corner_radius, self.corner_radius
             )
             
-            # 背景色
-            painter.fillPath(path, self.bg_color)
+            # 根据主题创建渐变背景
+            from PyQt6.QtGui import QLinearGradient
+            gradient = QLinearGradient(rect.x(), rect.y(), rect.x(), rect.y() + rect.height())
+            
+            # 检查当前主题
+            current_theme = getattr(self, 'current_theme', 'dark') if hasattr(self, 'current_theme') else 'dark'
+            
+            if current_theme == 'light':
+                # 明亮模式：中饱和度蓝绿渐变
+                gradient.setColorAt(0, QColor(200, 235, 225))  # 薄荷绿
+                gradient.setColorAt(1, QColor(210, 235, 250))  # 天空蓝
+            else:
+                # 暗黑模式：中饱和度深色渐变
+                gradient.setColorAt(0, QColor(28, 52, 58))    # 深青灰
+                gradient.setColorAt(1, QColor(20, 45, 60))    # 深蓝灰
+            
+            painter.fillPath(path, gradient)
         except Exception as e:
             print(f"绘制错误: {e}")
         finally:
@@ -944,26 +962,26 @@ class ModernSyncGUI(RoundedWindow):
         if self.current_theme == 'light':
             colors = {
                 'bg': '#F5F5F5',
-                'panel': '#FFFFFF',
+                'panel': 'rgba(255, 255, 255, 0.5)',  # 50%透明度，透出渐变背景
                 'titlebar': '#E8E8E8',
                 'text': '#1A1A1A',
                 'text_secondary': '#505050',
                 'separator': '#D0D0D0',
                 'input_bg': '#FAFAFA',
                 'input_border': '#D0D0D0',
-                'hover': '#E0E0E0'
+                'hover': 'rgba(224, 224, 224, 0.6)'  # 60%透明度
             }
         else:  # dark
             colors = {
                 'bg': '#1A1A1A',
-                'panel': '#2B2B2B',
+                'panel': 'rgba(43, 43, 43, 0.3)',  # 50%透明度，透出渐变背景
                 'titlebar': '#2B2B2B',
                 'text': '#E0E0E0',
                 'text_secondary': '#A0A0A0',
                 'separator': '#404040',
                 'input_bg': '#1F1F1F',
                 'input_border': '#404040',
-                'hover': '#3A3A3A'
+                'hover': 'rgba(58, 58, 58, 0.6)'  # 60%透明度
             }
         
         self.setStyleSheet(f"""
@@ -1139,7 +1157,7 @@ class ModernSyncGUI(RoundedWindow):
             
             /* 按钮 */
             #primaryBtn {{
-                background-color: #2FA572;
+                background-color: rgba(47, 165, 114, 0.85);  /* 85%不透明度 */
                 color: white;
                 border: none;
                 border-radius: 10px;
@@ -1149,7 +1167,7 @@ class ModernSyncGUI(RoundedWindow):
             }}
             
             #primaryBtn:hover {{
-                background-color: #268F5F;
+                background-color: rgba(38, 143, 95, 0.9);  /* 悬停时更不透明 */
             }}
             
             #iconBtn {{
@@ -1174,32 +1192,32 @@ class ModernSyncGUI(RoundedWindow):
             }}
             
             #actionBtn[action="scan"] {{
-                background-color: #1F6AA5;
+                background-color: rgba(31, 106, 165, 0.85);
             }}
             
             #actionBtn[action="scan"]:hover {{
-                background-color: #175A8A;
+                background-color: rgba(23, 90, 138, 0.9);
             }}
             
             #actionBtn[action="diff"] {{
-                background-color: #CC7700;
+                background-color: rgba(204, 119, 0, 0.85);
             }}
             
             #actionBtn[action="diff"]:hover {{
-                background-color: #B36600;
+                background-color: rgba(179, 102, 0, 0.9);
             }}
             
             #actionBtn[action="full"] {{
-                background-color: #CC2F26;
+                background-color: rgba(204, 47, 38, 0.85);
             }}
             
             #actionBtn[action="full"]:hover {{
-                background-color: #B32923;
+                background-color: rgba(179, 41, 35, 0.9);
             }}
             
             /* 大操作按钮 */
             #bigActionBtn {{
-                background-color: #2FA572;
+                background-color: rgba(47, 165, 114, 0.85);
                 color: white;
                 border: none;
                 border-radius: 20px;
@@ -1209,12 +1227,12 @@ class ModernSyncGUI(RoundedWindow):
             }}
             
             #bigActionBtn:hover {{
-                background-color: #268F5F;
+                background-color: rgba(38, 143, 95, 0.9);
             }}
             
             /* 次要按钮 */
             #secondaryBtn {{
-                background-color: #1F6AA5;
+                background-color: rgba(31, 106, 165, 0.85);
                 color: white;
                 border: none;
                 border-radius: 10px;
@@ -1224,7 +1242,7 @@ class ModernSyncGUI(RoundedWindow):
             }}
             
             #secondaryBtn:hover {{
-                background-color: #175A8A;
+                background-color: rgba(23, 90, 138, 0.9);
             }}
             
             /* 路径显示框 */
@@ -1263,9 +1281,9 @@ class ModernSyncGUI(RoundedWindow):
             }}
             
             #themeBtn[selected="true"] {{
-                background-color: #2FA572;
+                background-color: rgba(47, 165, 114, 0.85);
                 color: white;
-                border-color: #2FA572;
+                border-color: rgba(47, 165, 114, 0.9);
             }}
             
             /* 进度条 */
@@ -1281,7 +1299,7 @@ class ModernSyncGUI(RoundedWindow):
             }}
             
             QProgressBar::chunk {{
-                background-color: #2FA572;
+                background-color: rgba(47, 165, 114, 0.85);
                 border-radius: 10px;
             }}
             
@@ -1720,14 +1738,14 @@ class ModernSyncGUI(RoundedWindow):
         theme_btn_layout = QHBoxLayout()
         theme_btn_layout.setSpacing(15)
         
-        dark_btn = QPushButton("🌙 暗色模式")
+        dark_btn = QPushButton("🌙 暗黑模式")
         dark_btn.setObjectName("themeBtn")
         dark_btn.setProperty("selected", self.current_theme == 'dark')
         dark_btn.setFixedHeight(50)
         dark_btn.clicked.connect(lambda: self._switch_theme('dark'))
         theme_btn_layout.addWidget(dark_btn)
         
-        light_btn = QPushButton("☀️ 亮色模式")
+        light_btn = QPushButton("☀️ 明亮模式")
         light_btn.setObjectName("themeBtn")
         light_btn.setProperty("selected", self.current_theme == 'light')
         light_btn.setFixedHeight(50)
@@ -1799,19 +1817,21 @@ class ModernSyncGUI(RoundedWindow):
         self.about_brief.setStyleSheet("""
             padding: 15px;
             background-color: rgba(47, 165, 114, 0.1);
-            border: 2px solid #2FA572;
+            border: 2px solid rgba(80, 150, 125, 0.6);
             border-radius: 10px;
         """)
         about_layout.addWidget(self.about_brief)
         
         # 绑定鼠标事件
-        self.about_brief.enterEvent = lambda e: self._show_about_bubble(e)
-        self.about_brief.leaveEvent = lambda e: self._hide_about_bubble_delayed()
+        self.about_brief.enterEvent = lambda e: self._start_bubble_timer()
+        self.about_brief.leaveEvent = lambda e: self._cancel_bubble_timer()
+        self.about_brief.mousePressEvent = lambda e: self._show_about_bubble_immediately()
         
         # 气泡提示框和蒙版
         self.about_bubble = None
         self.bubble_overlay = None
         self._bubble_hide_timer = None
+        self._bubble_show_timer = None  # 延迟显示定时器
         
         panel_layout.addWidget(about_section)
         panel_layout.addStretch()
@@ -1860,8 +1880,34 @@ class ModernSyncGUI(RoundedWindow):
         # 重新显示设置页面
         QTimer.singleShot(100, self._show_settings)
     
-    def _show_about_bubble(self, event):
-        """显示关于信息气泡"""
+    def _start_bubble_timer(self):
+        """开始气泡显示延迟定时器（3秒）"""
+        # 取消任何现有的定时器
+        self._cancel_bubble_timer()
+        
+        # 创建1.5秒延迟定时器
+        self._bubble_show_timer = QTimer()
+        self._bubble_show_timer.setSingleShot(True)
+        self._bubble_show_timer.timeout.connect(self._show_about_bubble_delayed)
+        self._bubble_show_timer.start(1500)  # 1.5秒
+    
+    def _cancel_bubble_timer(self):
+        """取消气泡显示延迟定时器"""
+        if self._bubble_show_timer:
+            self._bubble_show_timer.stop()
+            self._bubble_show_timer = None
+        
+        # 鼠标离开时，如果气泡已显示，延迟隐藏
+        if self.about_bubble and self.about_bubble.isVisible():
+            self._hide_about_bubble_delayed()
+    
+    def _show_about_bubble_immediately(self):
+        """立即显示气泡（点击触发）"""
+        self._cancel_bubble_timer()
+        self._show_about_bubble_delayed()
+    
+    def _show_about_bubble_delayed(self):
+        """延迟显示气泡（由定时器或点击触发）"""
         # 取消延迟隐藏
         if self._bubble_hide_timer:
             self._bubble_hide_timer.stop()
@@ -1883,15 +1929,15 @@ class ModernSyncGUI(RoundedWindow):
         
         # 根据主题设置颜色
         if self.current_theme == 'light':
-            card_bg = "rgba(248, 248, 250, 0.5)"
-            title_color_1 = "#2FA572"
-            title_color_2 = "#1F6AA5"
+            card_bg = "rgba(185, 225, 210, 0.55)"  # 提高饱和度
+            title_color_1 = "#28A068"  # 更鲜艳的绿色
+            title_color_2 = "#1A5F95"  # 更鲜艳的蓝色
             text_color = "#2B2B2B"
             subtitle_color = "#707070"
         else:
-            card_bg = "rgba(28, 28, 30, 0.5)"
-            title_color_1 = "#2FA572"
-            title_color_2 = "#4FC3F7"
+            card_bg = "rgba(30, 55, 60, 0.55)"  # 提高饱和度
+            title_color_1 = "#55D095"  # 更鲜艳的绿色
+            title_color_2 = "#45BBEF"  # 更鲜艳的蓝色
             text_color = "#E0E0E0"
             subtitle_color = "#B0B0B0"
         
