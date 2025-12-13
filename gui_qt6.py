@@ -16,6 +16,7 @@ from PyQt6.QtGui import QPalette, QColor, QPainter, QPainterPath, QRegion, QFont
 from database import Database
 from file_scanner import FileScanner
 from sync_core import SyncCore
+from treemap_widget import TreemapWidget
 import threading
 
 
@@ -470,7 +471,7 @@ class ModernSyncGUI(RoundedWindow):
         layout.addStretch()
         
         # 版本信息
-        version = QLabel("v2.1 Enhanced Edition\n\nCopyright © 2026 Fenwick All Rights Reserved")
+        version = QLabel("v2.2 Enhanced Edition\n\nCopyright © 2026 Fenwick All Rights Reserved")
         version.setObjectName("version")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
@@ -1810,7 +1811,7 @@ class ModernSyncGUI(RoundedWindow):
         
         # 简要信息（默认显示）
         self.about_brief = QLabel(
-            "文件同步工具 v2.1 Enhanced | PyQt6 Edition\n"
+            "文件同步工具 v2.2 Enhanced | PyQt6 Edition\n"
             "👆 悬停查看详细信息"
         )
         self.about_brief.setObjectName("infoText")
@@ -1947,7 +1948,7 @@ class ModernSyncGUI(RoundedWindow):
         bubble_text = (
             "<div style='text-align: center; margin-bottom: 15px;'>"
             f"<span style='font-size: 16px; font-weight: bold; color: {title_color_1};'>"
-            "📦 文件同步工具 v2.1 Enhanced</span><br>"
+            "📦 文件同步工具 v2.2 Enhanced</span><br>"
             f"<span style='font-size: 12px; color: {subtitle_color};'>PyQt6 Edition</span>"
             "</div>"
             
@@ -2567,10 +2568,29 @@ class ModernSyncGUI(RoundedWindow):
         layout.setContentsMargins(40, 30, 40, 30)
         layout.setSpacing(20)
         
+        # 标题和详细列表按钮容器
+        header_container = QWidget()
+        header_layout = QHBoxLayout(header_container)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        
         # 标题
         title = QLabel("💾 存储空间分析")
         title.setObjectName("pageTitle")
-        layout.addWidget(title)
+        header_layout.addWidget(title)
+        
+        # 添加弹性空间
+        header_layout.addStretch()
+        
+        # 详细列表按钮（右上角）
+        self.storage_stats_data = None  # 存储数据供弹窗使用
+        details_btn = QPushButton("📋 详细列表")
+        details_btn.setObjectName("secondaryBtn")
+        details_btn.setFixedHeight(40)
+        details_btn.setFixedWidth(120)
+        details_btn.clicked.connect(self._show_storage_details_dialog)
+        header_layout.addWidget(details_btn)
+        
+        layout.addWidget(header_container)
         
         # 获取存储统计
         storage_stats = self.db.get_storage_statistics()
@@ -2582,6 +2602,9 @@ class ModernSyncGUI(RoundedWindow):
         chart_layout.setContentsMargins(30, 30, 30, 30)
         
         if storage_stats:
+            # 保存数据供弹窗使用
+            self.storage_stats_data = storage_stats
+            
             # 计算总大小
             total_size = sum(item['total_size'] for item in storage_stats)
             total_files = sum(item['file_count'] for item in storage_stats)
@@ -2602,24 +2625,6 @@ class ModernSyncGUI(RoundedWindow):
             # 树形图（Treemap）
             treemap_chart = self._create_treemap_chart(storage_stats, total_size)
             chart_layout.addWidget(treemap_chart)
-            
-            # 详细列表
-            chart_layout.addSpacing(20)
-            details_label = QLabel("📁 详细列表")
-            details_label.setObjectName("sectionTitle")
-            chart_layout.addWidget(details_label)
-            
-            for item in storage_stats:
-                folder_name = os.path.basename(item['folder'])
-                size_str = FileScanner.format_size(item['total_size'])
-                percentage = (item['total_size'] / total_size * 100) if total_size > 0 else 0
-                
-                item_text = QLabel(
-                    f"• {folder_name}\n"
-                    f"  {item['file_count']} 个文件 | {size_str} ({percentage:.1f}%)"
-                )
-                item_text.setObjectName("infoText")
-                chart_layout.addWidget(item_text)
         else:
             no_data = QLabel("⚠️ 暂无存储数据")
             no_data.setObjectName("sectionTitle")
@@ -2636,6 +2641,181 @@ class ModernSyncGUI(RoundedWindow):
         layout.addWidget(back_btn)
         
         self.content_layout.addWidget(container)
+    
+    def _show_storage_details_dialog(self):
+        """显示存储详细列表气泡"""
+        if not self.storage_stats_data:
+            return
+        
+        from PyQt6.QtWidgets import QDialog
+        from PyQt6.QtCore import Qt, QPoint
+        
+        # 创建无边框气泡对话框
+        bubble = QDialog(self)
+        bubble.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        bubble.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # 根据主题选择颜色
+        if self.current_theme == 'light':
+            bg_color = "rgba(255, 255, 255, 0.95)"
+            border_color = "rgba(0, 0, 0, 0.1)"
+            title_color = "#2B2B2B"
+            separator_color = "rgba(0, 0, 0, 0.1)"
+            item_bg = "rgba(0, 0, 0, 0.03)"
+            item_hover_bg = "rgba(0, 0, 0, 0.08)"
+            name_color = "#2B2B2B"
+            label_color = "#606060"
+            value_color = "#404040"
+            percentage_color = "#1F6AA5"
+            scrollbar_bg = "rgba(0, 0, 0, 0.05)"
+            scrollbar_handle = "rgba(0, 0, 0, 0.2)"
+        else:
+            bg_color = "rgba(43, 43, 43, 0.95)"
+            border_color = "rgba(255, 255, 255, 0.1)"
+            title_color = "#E0E0E0"
+            separator_color = "rgba(255, 255, 255, 0.1)"
+            item_bg = "rgba(255, 255, 255, 0.05)"
+            item_hover_bg = "rgba(255, 255, 255, 0.1)"
+            name_color = "#E0E0E0"
+            label_color = "#A0A0A0"
+            value_color = "#C0C0C0"
+            percentage_color = "#3B8ED0"
+            scrollbar_bg = "rgba(255, 255, 255, 0.05)"
+            scrollbar_handle = "rgba(255, 255, 255, 0.2)"
+        
+        # 主容器
+        main_container = QFrame(bubble)
+        main_container.setObjectName("bubble")
+        main_container.setStyleSheet(f"""
+            QFrame#bubble {{
+                background-color: {bg_color};
+                border-radius: 12px;
+                border: 1px solid {border_color};
+            }}
+        """)
+        
+        # 布局
+        container_layout = QVBoxLayout(bubble)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.addWidget(main_container)
+        
+        layout = QVBoxLayout(main_container)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
+        
+        # 标题
+        title_label = QLabel("📁 存储详情")
+        title_label.setStyleSheet(f"""
+            font-size: 14px;
+            font-weight: bold;
+            color: {title_color};
+            padding-bottom: 5px;
+        """)
+        layout.addWidget(title_label)
+        
+        # 分隔线
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setStyleSheet(f"background-color: {separator_color}; max-height: 1px;")
+        layout.addWidget(separator)
+        
+        # 滚动区域
+        from PyQt6.QtWidgets import QScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMaximumHeight(400)
+        scroll.setMinimumWidth(380)
+        scroll.setStyleSheet(f"""
+            QScrollArea {{
+                border: none;
+                background-color: transparent;
+            }}
+            QScrollBar:vertical {{
+                background: {scrollbar_bg};
+                width: 8px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {scrollbar_handle};
+                border-radius: 4px;
+            }}
+        """)
+        
+        # 内容容器
+        content = QWidget()
+        content.setStyleSheet("background-color: transparent;")
+        content_layout = QVBoxLayout(content)
+        content_layout.setSpacing(8)
+        content_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # 计算总大小
+        total_size = sum(item['total_size'] for item in self.storage_stats_data)
+        
+        # 显示每个文件夹
+        for item in self.storage_stats_data:
+            folder_name = os.path.basename(item['folder'])
+            size_str = FileScanner.format_size(item['total_size'])
+            percentage = (item['total_size'] / total_size * 100) if total_size > 0 else 0
+            
+            # 文件夹项
+            item_frame = QFrame()
+            item_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {item_bg};
+                    border-radius: 8px;
+                    padding: 8px;
+                }}
+                QFrame:hover {{
+                    background-color: {item_hover_bg};
+                }}
+            """)
+            item_layout = QVBoxLayout(item_frame)
+            item_layout.setContentsMargins(10, 8, 10, 8)
+            item_layout.setSpacing(4)
+            
+            # 文件夹名称
+            name_label = QLabel(f"📁 {folder_name}")
+            name_label.setStyleSheet(f"""
+                font-size: 13px;
+                font-weight: bold;
+                color: {name_color};
+            """)
+            item_layout.addWidget(name_label)
+            
+            # 详细信息
+            detail_label = QLabel(
+                f"<span style='color: {label_color};'>文件数:</span> <span style='color: {value_color};'>{item['file_count']} 个</span><br>"
+                f"<span style='color: {label_color};'>大小:</span> <span style='color: {value_color};'>{size_str}</span><br>"
+                f"<span style='color: {label_color};'>占比:</span> <span style='color: {percentage_color};'>{percentage:.1f}%</span>"
+            )
+            detail_label.setStyleSheet("font-size: 11px; line-height: 1.4;")
+            item_layout.addWidget(detail_label)
+            
+            content_layout.addWidget(item_frame)
+        
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+        
+        # 计算气泡位置（在主窗口中心）
+        # 获取气泡的尺寸
+        bubble.adjustSize()
+        bubble_width = 400  # 气泡宽度
+        bubble_height = min(450, bubble.sizeHint().height())  # 气泡高度，最大450
+        
+        # 获取主窗口的全局位置和尺寸
+        main_window = self.window()
+        main_global_pos = main_window.mapToGlobal(QPoint(0, 0))
+        main_width = main_window.width()
+        main_height = main_window.height()
+        
+        # 计算居中位置
+        bubble_x = main_global_pos.x() + (main_width - bubble_width) // 2
+        bubble_y = main_global_pos.y() + (main_height - bubble_height) // 2
+        
+        bubble.move(bubble_x, bubble_y)
+        
+        # 显示气泡
+        bubble.exec()
     
     def _create_pie_chart(self, storage_stats, total_size):
         """创建饼图"""
@@ -2698,6 +2878,20 @@ class ModernSyncGUI(RoundedWindow):
                     start_angle += span_angle
         
         chart = PieChartWidget(storage_stats, total_size, self.current_theme, chart_widget)
+        chart_layout = QVBoxLayout(chart_widget)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
+        chart_layout.addWidget(chart)
+        
+        return chart_widget
+    
+    def _create_treemap_chart(self, storage_stats, total_size):
+        """创建树形图（Treemap）"""
+        chart_widget = QFrame()
+        chart_widget.setObjectName("chartFrame")
+        chart_widget.setMinimumHeight(250)  # 降低最小高度
+        chart_widget.setMaximumHeight(350)  # 限制最大高度
+        
+        chart = TreemapWidget(storage_stats, total_size, self.current_theme, chart_widget)
         chart_layout = QVBoxLayout(chart_widget)
         chart_layout.setContentsMargins(0, 0, 0, 0)
         chart_layout.addWidget(chart)
