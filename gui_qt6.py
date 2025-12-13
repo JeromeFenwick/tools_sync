@@ -2568,7 +2568,7 @@ class ModernSyncGUI(RoundedWindow):
         layout.setContentsMargins(40, 30, 40, 30)
         layout.setSpacing(20)
         
-        # 标题和详细列表按钮容器
+        # 标题和详细列表按钮容器（固定在顶部）
         header_container = QWidget()
         header_layout = QHBoxLayout(header_container)
         header_layout.setContentsMargins(0, 0, 0, 0)
@@ -2600,6 +2600,7 @@ class ModernSyncGUI(RoundedWindow):
         chart_panel.setObjectName("panel")
         chart_layout = QVBoxLayout(chart_panel)
         chart_layout.setContentsMargins(30, 30, 30, 30)
+        chart_layout.setSpacing(20)
         
         if storage_stats:
             # 保存数据供弹窗使用
@@ -2609,7 +2610,7 @@ class ModernSyncGUI(RoundedWindow):
             total_size = sum(item['total_size'] for item in storage_stats)
             total_files = sum(item['file_count'] for item in storage_stats)
             
-            # 显示总统计
+            # 显示总统计（左对齐）
             info_text = QLabel(
                 f"存储总览\n"
                 f"文件夹数: {len(storage_stats)} 个\n"
@@ -2617,19 +2618,26 @@ class ModernSyncGUI(RoundedWindow):
                 f"占用空间: {FileScanner.format_size(total_size)}"
             )
             info_text.setObjectName("sectionTitle")
+            info_text.setAlignment(Qt.AlignmentFlag.AlignLeft)
             chart_layout.addWidget(info_text)
             
-            # 顶部间距
-            chart_layout.addSpacing(20)
+            # 上方弹性空间，使树形图垂直居中
+            chart_layout.addStretch()
             
             # 树形图（Treemap）
             treemap_chart = self._create_treemap_chart(storage_stats, total_size)
             chart_layout.addWidget(treemap_chart)
+            
+            # 下方弹性空间，使树形图垂直居中
+            chart_layout.addStretch()
         else:
+            # 无数据时居中显示
+            chart_layout.addStretch()
             no_data = QLabel("⚠️ 暂无存储数据")
             no_data.setObjectName("sectionTitle")
             no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
             chart_layout.addWidget(no_data)
+            chart_layout.addStretch()
         
         layout.addWidget(chart_panel)
         
@@ -2657,8 +2665,8 @@ class ModernSyncGUI(RoundedWindow):
         
         # 根据主题选择颜色
         if self.current_theme == 'light':
-            bg_color = "rgba(255, 255, 255, 0.95)"
-            border_color = "rgba(0, 0, 0, 0.1)"
+            bg_color = "rgba(255, 255, 255, 1.0)"  # 完全不透明白色
+            border_color = "rgba(0, 0, 0, 0.15)"
             title_color = "#2B2B2B"
             separator_color = "rgba(0, 0, 0, 0.1)"
             item_bg = "rgba(0, 0, 0, 0.03)"
@@ -2670,8 +2678,8 @@ class ModernSyncGUI(RoundedWindow):
             scrollbar_bg = "rgba(0, 0, 0, 0.05)"
             scrollbar_handle = "rgba(0, 0, 0, 0.2)"
         else:
-            bg_color = "rgba(43, 43, 43, 0.95)"
-            border_color = "rgba(255, 255, 255, 0.1)"
+            bg_color = "rgba(43, 43, 43, 1.0)"  # 完全不透明深灰色
+            border_color = "rgba(255, 255, 255, 0.15)"
             title_color = "#E0E0E0"
             separator_color = "rgba(255, 255, 255, 0.1)"
             item_bg = "rgba(255, 255, 255, 0.05)"
@@ -2723,6 +2731,8 @@ class ModernSyncGUI(RoundedWindow):
         from PyQt6.QtWidgets import QScrollArea
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # 禁用水平滚动条
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)  # 垂直滚动条按需显示
         scroll.setMaximumHeight(400)
         scroll.setMinimumWidth(380)
         scroll.setStyleSheet(f"""
@@ -2734,16 +2744,28 @@ class ModernSyncGUI(RoundedWindow):
                 background: {scrollbar_bg};
                 width: 8px;
                 border-radius: 4px;
+                margin: 0px;
             }}
             QScrollBar::handle:vertical {{
                 background: {scrollbar_handle};
                 border-radius: 4px;
+                margin: 0px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
             }}
         """)
         
         # 内容容器
         content = QWidget()
-        content.setStyleSheet("background-color: transparent;")
+        content.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+            }
+            QFrame {
+                border: none;
+            }
+        """)
         content_layout = QVBoxLayout(content)
         content_layout.setSpacing(8)
         content_layout.setContentsMargins(5, 5, 5, 5)
