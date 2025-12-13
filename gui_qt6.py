@@ -8,10 +8,11 @@ import platform
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame, QScrollArea, QTextEdit, QFileDialog,
-    QGridLayout, QSizePolicy, QProgressBar
+    QGridLayout, QSizePolicy, QProgressBar, QGraphicsView, QGraphicsScene, QToolTip,
+    QGraphicsBlurEffect
 )
-from PyQt6.QtCore import Qt, QPoint, QPropertyAnimation, QEasingCurve, pyqtSignal, QTimer
-from PyQt6.QtGui import QPalette, QColor, QPainter, QPainterPath, QRegion, QFont, QIcon
+from PyQt6.QtCore import Qt, QPoint, QPropertyAnimation, QEasingCurve, pyqtSignal, QTimer, QParallelAnimationGroup, QRectF
+from PyQt6.QtGui import QPalette, QColor, QPainter, QPainterPath, QRegion, QFont, QIcon, QPen, QBrush
 from database import Database
 from file_scanner import FileScanner
 from sync_core import SyncCore
@@ -33,6 +34,86 @@ def get_app_dir():
             return os.path.dirname(executable_path)
     else:
         return os.path.dirname(os.path.abspath(__file__))
+
+
+class FloatingBubble(QWidget):
+    """浮动气泡提示框"""
+    
+    def __init__(self, text, theme='dark', parent=None):
+        super().__init__(parent, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.theme = theme
+        
+        # 根据主题设置颜色
+        if theme == 'light':
+            bg_start = "rgba(248, 248, 250, 0.95)"
+            bg_end = "rgba(240, 240, 242, 0.95)"
+            text_color = "#2B2B2B"
+            border_color = "rgba(47, 165, 114, 0.9)"
+        else:
+            bg_start = "rgba(28, 28, 30, 0.95)"
+            bg_end = "rgba(20, 20, 22, 0.95)"
+            text_color = "#E8E8E8"
+            border_color = "rgba(47, 165, 114, 0.9)"
+        
+        # 设置内容
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        self.label = QLabel(text)
+        self.label.setWordWrap(True)
+        self.label.setStyleSheet(f"""
+            QLabel {{
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {bg_start},
+                    stop:1 {bg_end}
+                );
+                color: {text_color};
+                padding: 25px;
+                border-radius: 15px;
+                border: 2px solid {border_color};
+                font-size: 13px;
+                font-family: "Microsoft YaHei";
+                line-height: 1.8;
+            }}
+        """)
+        layout.addWidget(self.label)
+        
+        # 设置最大宽度
+        self.setMaximumWidth(450)
+        
+        # 添加渐隐动画
+        self.opacity_effect = QPropertyAnimation(self, b"windowOpacity")
+        self.opacity_effect.setDuration(200)
+        self.opacity_effect.setStartValue(0.0)
+        self.opacity_effect.setEndValue(1.0)
+        self.opacity_effect.setEasingCurve(QEasingCurve.Type.OutCubic)
+    
+    def showEvent(self, event):
+        """显示时播放渐显动画"""
+        super().showEvent(event)
+        self.opacity_effect.start()
+    
+    def paintEvent(self, event):
+        """绘制阴影和背景"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # 绘制柔和阴影
+        shadow_rect = self.rect().adjusted(10, 10, -10, -10)
+        
+        # 多层阴影效果
+        for i in range(8, 0, -1):
+            alpha = int(30 - i * 3)
+            shadow_color = QColor(0, 0, 0, alpha)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(shadow_color))
+            painter.drawRoundedRect(
+                shadow_rect.adjusted(-i, -i, i, i),
+                15 + i, 15 + i
+            )
 
 
 class RoundedWindow(QMainWindow):
@@ -122,6 +203,9 @@ class ModernSyncGUI(RoundedWindow):
         
         # 设置窗口图标
         self._set_window_icon()
+        
+        # 启用拖拽功能
+        self.setAcceptDrops(True)
         
     def closeEvent(self, event):
         """窗口关闭事件"""
@@ -242,6 +326,35 @@ class ModernSyncGUI(RoundedWindow):
             self.showNormal()
         else:
             self.showMaximized()
+    
+    def dragEnterEvent(self, event):
+        """拖拽进入事件"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+    
+    def dropEvent(self, event):
+        """放下事件 - 添加拖拽的文件夹"""
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                folder_path = url.toLocalFile()
+                if os.path.isdir(folder_path):
+                    # 在备份模式下添加到备份文件夹列表
+                    if self.current_mode == 'backup':
+                        if folder_path not in self.selected_paths:
+                            self.selected_paths.append(folder_path)
+                            if hasattr(self, 'folder_list_layout'):
+                                self._add_folder_item(folder_path)
+                            self._log_message(f"✓ 拖拽添加文件夹: {folder_path}")
+                            self.db.set_backup_folders(self.selected_paths)
+                    # 在同步模式下也可以添加
+                    elif self.current_mode == 'sync':
+                        if folder_path not in self.selected_paths:
+                            self.selected_paths.append(folder_path)
+                            if hasattr(self, 'folder_list_layout'):
+                                self._add_folder_item(folder_path)
+                            self._log_message(f"✓ 拖拽添加文件夹: {folder_path}")
+                            self.db.set_sync_folders(self.selected_paths)
+            event.acceptProposedAction()
             
     def _create_mode_selection(self):
         """创建模式选择界面"""
@@ -282,6 +395,7 @@ class ModernSyncGUI(RoundedWindow):
         backup_btn.setProperty("mode", "backup")
         backup_btn.setFixedSize(220, 100)
         backup_btn.clicked.connect(lambda: self._switch_mode('backup'))
+        self._add_button_animation(backup_btn)  # 添加动画
         btn_layout.addWidget(backup_btn)
         
         # 同步模式按钮
@@ -290,6 +404,7 @@ class ModernSyncGUI(RoundedWindow):
         sync_btn.setProperty("mode", "sync")
         sync_btn.setFixedSize(220, 100)
         sync_btn.clicked.connect(lambda: self._switch_mode('sync'))
+        self._add_button_animation(sync_btn)  # 添加动画
         btn_layout.addWidget(sync_btn)
         
         layout.addWidget(btn_container, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -325,7 +440,10 @@ class ModernSyncGUI(RoundedWindow):
         info_layout.addWidget(sep2)
         
         # 更多功能说明
-        coming_info = QLabel("🚀 更多功能\n敬请期待 . . .")
+        coming_info = QLabel(
+            "🚀 更多功能\n"
+            "拖拽添加 · 动画效果 · 数据统计"
+        )
         coming_info.setObjectName("infoText")
         info_layout.addWidget(coming_info)
         
@@ -334,7 +452,7 @@ class ModernSyncGUI(RoundedWindow):
         layout.addStretch()
         
         # 版本信息
-        version = QLabel("v2.0 Modern Edition\nCopyright © 2026 Fenwick All Rights Reserved")
+        version = QLabel("v2.1 Enhanced Edition\n\nCopyright © 2026 Fenwick All Rights Reserved")
         version.setObjectName("version")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
@@ -342,12 +460,83 @@ class ModernSyncGUI(RoundedWindow):
         self.content_layout.addWidget(container)
         
     def _switch_mode(self, mode):
-        """切换工作模式"""
+        """切换工作模式（带动画）"""
         self.current_mode = mode
+        
+        # 添加渐隐动画
+        self._fade_out_content()
+        
+        # 延迟切换界面
+        QTimer.singleShot(200, lambda: self._switch_mode_delayed(mode))
+    
+    def _switch_mode_delayed(self, mode):
+        """延迟切换模式（动画后）"""
         if mode == 'backup':
             self._create_backup_interface()
         else:
             self._create_sync_interface()
+        
+        # 添加渐显动画
+        self._fade_in_content()
+    
+    def _fade_out_content(self):
+        """内容区域渐隐动画"""
+        if hasattr(self, 'content_widget') and self.content_widget:
+            animation = QPropertyAnimation(self.content_widget, b"windowOpacity")
+            animation.setDuration(150)
+            animation.setStartValue(1.0)
+            animation.setEndValue(0.0)
+            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            animation.start()
+            # 保存引用防止被垃圾回收
+            self._fade_animation = animation
+    
+    def _fade_in_content(self):
+        """内容区域渐显动画"""
+        if hasattr(self, 'content_widget') and self.content_widget:
+            self.content_widget.setWindowOpacity(0.0)
+            animation = QPropertyAnimation(self.content_widget, b"windowOpacity")
+            animation.setDuration(200)
+            animation.setStartValue(0.0)
+            animation.setEndValue(1.0)
+            animation.setEasingCurve(QEasingCurve.Type.InCubic)
+            animation.start()
+            # 保存引用防止被垃圾回收
+            self._fade_animation = animation
+    
+    def _add_button_animation(self, button):
+        """为按钮添加点击动画效果"""
+        original_press = button.mousePressEvent
+        original_release = button.mouseReleaseEvent
+        
+        def animated_press(event):
+            # 按下时缩小
+            animation = QPropertyAnimation(button, b"geometry")
+            animation.setDuration(100)
+            start_geo = button.geometry()
+            end_geo = start_geo.adjusted(2, 2, -2, -2)
+            animation.setStartValue(start_geo)
+            animation.setEndValue(end_geo)
+            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            animation.start()
+            button._press_animation = animation
+            original_press(event)
+        
+        def animated_release(event):
+            # 释放时恢复
+            animation = QPropertyAnimation(button, b"geometry")
+            animation.setDuration(100)
+            start_geo = button.geometry()
+            end_geo = start_geo.adjusted(-2, -2, 2, 2)
+            animation.setStartValue(start_geo)
+            animation.setEndValue(end_geo)
+            animation.setEasingCurve(QEasingCurve.Type.InCubic)
+            animation.start()
+            button._release_animation = animation
+            original_release(event)
+        
+        button.mousePressEvent = animated_press
+        button.mouseReleaseEvent = animated_release
             
     def _create_backup_interface(self):
         """创建备份模式界面"""
@@ -464,10 +653,27 @@ class ModernSyncGUI(RoundedWindow):
         full_btn.clicked.connect(lambda: self._create_backup('full'))
         layout.addWidget(full_btn)
         
-        # 日志标签
+        # 日志标签和导出按钮
+        log_header = QWidget()
+        log_header_layout = QHBoxLayout(log_header)
+        log_header_layout.setContentsMargins(0, 0, 0, 0)
+        log_header_layout.setSpacing(10)
+        
         log_label = QLabel("📋 操作日志")
         log_label.setObjectName("sectionTitle")
-        layout.addWidget(log_label)
+        log_header_layout.addWidget(log_label)
+        
+        log_header_layout.addStretch()
+        
+        # 导出按钮
+        export_btn = QPushButton("💾 导出")
+        export_btn.setObjectName("iconBtn")
+        export_btn.setFixedSize(80, 30)
+        export_btn.setToolTip("导出日志为TXT/CSV")
+        export_btn.clicked.connect(lambda: self._export_log('backup'))
+        log_header_layout.addWidget(export_btn)
+        
+        layout.addWidget(log_header)
         
         # 进度条
         self.backup_progress = QProgressBar()
@@ -623,10 +829,27 @@ class ModernSyncGUI(RoundedWindow):
         
         layout.addWidget(info_card)
         
-        # 日志标签
+        # 日志标签和导出按钮
+        log_header = QWidget()
+        log_header_layout = QHBoxLayout(log_header)
+        log_header_layout.setContentsMargins(0, 0, 0, 0)
+        log_header_layout.setSpacing(10)
+        
         log_label = QLabel("📋 操作日志")
         log_label.setObjectName("sectionTitle")
-        layout.addWidget(log_label)
+        log_header_layout.addWidget(log_label)
+        
+        log_header_layout.addStretch()
+        
+        # 导出按钮
+        export_btn = QPushButton("💾 导出")
+        export_btn.setObjectName("iconBtn")
+        export_btn.setFixedSize(80, 30)
+        export_btn.setToolTip("导出日志为TXT/CSV")
+        export_btn.clicked.connect(lambda: self._export_log('sync'))
+        log_header_layout.addWidget(export_btn)
+        
+        layout.addWidget(log_header)
         
         # 进度条
         self.sync_progress = QProgressBar()
@@ -797,6 +1020,14 @@ class ModernSyncGUI(RoundedWindow):
             #mainTitle {{
                 color: {colors['text']};
                 font-size: 42px;
+                font-weight: bold;
+                font-family: "Microsoft YaHei";
+            }}
+            
+            /* 页面标题（设置页等）*/
+            #pageTitle {{
+                color: {colors['text']};
+                font-size: 24px;
                 font-weight: bold;
                 font-family: "Microsoft YaHei";
             }}
@@ -1364,7 +1595,7 @@ class ModernSyncGUI(RoundedWindow):
                     f"{icon} 同步中: {current}/{total} - {filename} [{status}]"
                 )
                 
-            result = self.sync_core.sync_to_folder(
+            result = self.sync_core.sync_to_folder_parallel(
                 self.selected_archive,
                 self.sync_target_folder,
                 sync_callback
@@ -1393,6 +1624,66 @@ class ModernSyncGUI(RoundedWindow):
         if hasattr(self, 'sync_log'):
             self.sync_log.append(message)
     
+    def _export_log(self, mode='backup'):
+        """导出日志为TXT或CSV文件"""
+        # 获取日志内容
+        if mode == 'backup':
+            if not hasattr(self, 'backup_log'):
+                return
+            log_content = self.backup_log.toPlainText()
+            default_name = f"备份日志_{QTimer().remainingTime()}.txt"
+        else:
+            if not hasattr(self, 'sync_log'):
+                return
+            log_content = self.sync_log.toPlainText()
+            default_name = f"同步日志_{QTimer().remainingTime()}.txt"
+        
+        if not log_content.strip():
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "提示", "日志为空，无法导出")
+            return
+        
+        # 选择保存文件
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_name = f"{mode}_log_{timestamp}.txt"
+        
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "导出日志",
+            default_name,
+            "Text Files (*.txt);;CSV Files (*.csv);;All Files (*.*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            # 根据文件类型导出
+            if file_path.endswith('.csv'):
+                # CSV格式：将日志按行分割
+                import csv
+                with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(['时间戳', '日志内容'])
+                    for line in log_content.split('\n'):
+                        if line.strip():
+                            writer.writerow([timestamp, line.strip()])
+            else:
+                # TXT格式：直接保存
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(f"====== {mode.upper()} 日志 ======\n")
+                    f.write(f"导出时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("=" * 50 + "\n\n")
+                    f.write(log_content)
+            
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "成功", f"日志已导出到:\n{file_path}")
+            
+        except Exception as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "错误", f"导出日志失败:\n{str(e)}")
+    
     def _show_settings(self):
         """显示设置页面"""
         # 清空内容
@@ -1406,7 +1697,7 @@ class ModernSyncGUI(RoundedWindow):
         
         # 标题
         title = QLabel("设置")
-        title.setObjectName("mainTitle")
+        title.setObjectName("pageTitle")
         layout.addWidget(title)
         
         # 设置面板
@@ -1452,7 +1743,43 @@ class ModernSyncGUI(RoundedWindow):
         separator1.setObjectName("separator")
         panel_layout.addWidget(separator1)
         
-        # 关于信息
+        # 统计图表区域
+        stats_section = QWidget()
+        stats_layout = QVBoxLayout(stats_section)
+        stats_layout.setSpacing(15)
+        
+        stats_label = QLabel("📊 数据统计")
+        stats_label.setObjectName("sectionTitle")
+        stats_layout.addWidget(stats_label)
+        
+        # 统计按钮布局
+        stats_btn_layout = QHBoxLayout()
+        stats_btn_layout.setSpacing(15)
+        
+        # 备份趋势图
+        trend_btn = QPushButton("📈 备份趋势")
+        trend_btn.setObjectName("themeBtn")
+        trend_btn.setFixedHeight(50)
+        trend_btn.clicked.connect(self._show_backup_trend)
+        stats_btn_layout.addWidget(trend_btn)
+        
+        # 空间分析
+        storage_btn = QPushButton("💾 空间分析")
+        storage_btn.setObjectName("themeBtn")
+        storage_btn.setFixedHeight(50)
+        storage_btn.clicked.connect(self._show_storage_analysis)
+        stats_btn_layout.addWidget(storage_btn)
+        
+        stats_layout.addLayout(stats_btn_layout)
+        panel_layout.addWidget(stats_section)
+        
+        # 分隔线
+        separator2 = QFrame()
+        separator2.setFrameShape(QFrame.Shape.HLine)
+        separator2.setObjectName("separator")
+        panel_layout.addWidget(separator2)
+        
+        # 关于信息 - 浮动气泡式
         about_section = QWidget()
         about_layout = QVBoxLayout(about_section)
         about_layout.setSpacing(10)
@@ -1461,18 +1788,30 @@ class ModernSyncGUI(RoundedWindow):
         about_label.setObjectName("sectionTitle")
         about_layout.addWidget(about_label)
         
-        info_text = QLabel(
-            "文件同步工具 v2.0\n"
-            "PyQt6 Edition\n\n"
-            "功能：智能备份、MD5校验、冲突处理\n"
-            "框架：PyQt6 + Python 3.9+\n\n"
-            "作者：Fenwick\n"
-            "链接：https://github.com/JeromeFenwick/tools_sync\n\n"
-            "版权所有 © 2026 Fenwick. 版权所有。"
+        # 简要信息（默认显示）
+        self.about_brief = QLabel(
+            "文件同步工具 v2.1 Enhanced | PyQt6 Edition\n"
+            "👆 悬停查看详细信息"
         )
-        info_text.setObjectName("infoText")
-        info_text.setWordWrap(True)
-        about_layout.addWidget(info_text)
+        self.about_brief.setObjectName("infoText")
+        self.about_brief.setWordWrap(True)
+        self.about_brief.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.about_brief.setStyleSheet("""
+            padding: 15px;
+            background-color: rgba(47, 165, 114, 0.1);
+            border: 2px solid #2FA572;
+            border-radius: 10px;
+        """)
+        about_layout.addWidget(self.about_brief)
+        
+        # 绑定鼠标事件
+        self.about_brief.enterEvent = lambda e: self._show_about_bubble(e)
+        self.about_brief.leaveEvent = lambda e: self._hide_about_bubble_delayed()
+        
+        # 气泡提示框和蒙版
+        self.about_bubble = None
+        self.bubble_overlay = None
+        self._bubble_hide_timer = None
         
         panel_layout.addWidget(about_section)
         panel_layout.addStretch()
@@ -1520,6 +1859,413 @@ class ModernSyncGUI(RoundedWindow):
         
         # 重新显示设置页面
         QTimer.singleShot(100, self._show_settings)
+    
+    def _show_about_bubble(self, event):
+        """显示关于信息气泡"""
+        # 取消延迟隐藏
+        if self._bubble_hide_timer:
+            self._bubble_hide_timer.stop()
+            self._bubble_hide_timer = None
+        
+        # 创建蒙版层（如果不存在）
+        if not hasattr(self, 'bubble_overlay') or self.bubble_overlay is None:
+            self.bubble_overlay = QWidget(self)
+            self.bubble_overlay.setGeometry(0, 0, self.width(), self.height())
+            self.bubble_overlay.setStyleSheet("""
+                background-color: rgba(0, 0, 0, 0.5);
+            """)
+            self.bubble_overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            self.bubble_overlay.lower()  # 确保在最底层
+        
+        # 显示蒙版
+        self.bubble_overlay.show()
+        self.bubble_overlay.raise_()
+        
+        # 根据主题设置颜色
+        if self.current_theme == 'light':
+            card_bg = "rgba(248, 248, 250, 0.5)"
+            title_color_1 = "#2FA572"
+            title_color_2 = "#1F6AA5"
+            text_color = "#2B2B2B"
+            subtitle_color = "#707070"
+        else:
+            card_bg = "rgba(28, 28, 30, 0.5)"
+            title_color_1 = "#2FA572"
+            title_color_2 = "#4FC3F7"
+            text_color = "#E0E0E0"
+            subtitle_color = "#B0B0B0"
+        
+        # 创建气泡内容
+        bubble_text = (
+            "<div style='text-align: center; margin-bottom: 15px;'>"
+            f"<span style='font-size: 16px; font-weight: bold; color: {title_color_1};'>"
+            "📦 文件同步工具 v2.1 Enhanced</span><br>"
+            f"<span style='font-size: 12px; color: {subtitle_color};'>PyQt6 Edition</span>"
+            "</div>"
+            
+            f"<div style='margin: 12px 0; padding: 10px; background: {card_bg}; border-radius: 8px; border-left: 3px solid {title_color_1};'>"
+            f"<span style='color: {title_color_1}; font-weight: bold;'>✨ 核心功能</span><br>"
+            f"<span style='font-size: 12px; color: {text_color};'>"
+            "• 智能备份 &nbsp; • MD5校验 &nbsp; • 冲突处理<br>"
+            "• 拖拽添加 &nbsp; • 动画效果 &nbsp; • 数据统计"
+            "</span>"
+            "</div>"
+            
+            f"<div style='margin: 12px 0; padding: 10px; background: {card_bg}; border-radius: 8px; border-left: 3px solid {title_color_2};'>"
+            f"<span style='color: {title_color_2}; font-weight: bold;'>🚀 增强特性</span><br>"
+            f"<span style='font-size: 12px; color: {text_color};'>"
+            "• 日志导出(TXT/CSV)<br>"
+            "• 多线程并发优化<br>"
+            "• 存储空间可视化"
+            "</span>"
+            "</div>"
+            
+            f"<div style='text-align: center; margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(47, 165, 114, 0.4);'>"
+            "<span style='font-size: 11px; color: #A0A0A0;'>"
+            "👨‍💻 作者: Fenwick &nbsp;|&nbsp; "
+            f"<a href='https://github.com/JeromeFenwick/tools_sync' style='color: {title_color_1}; text-decoration: none;'>🔗 GitHub</a><br>"
+            "© 2026 Fenwick. All Rights Reserved."
+            "</span>"
+            "</div>"
+        )
+        
+        # 如果气泡已存在，关闭它
+        if self.about_bubble:
+            self.about_bubble.close()
+            self.about_bubble = None
+        
+        # 创建新气泡（传递主题）
+        self.about_bubble = FloatingBubble(bubble_text, self.current_theme, self)
+        
+        # 计算气泡位置（在简要信息上方居中）
+        if hasattr(self, 'about_brief'):
+            brief_global_pos = self.about_brief.mapToGlobal(QPoint(0, 0))
+            bubble_width = 420
+            bubble_x = brief_global_pos.x() + (self.about_brief.width() - bubble_width) // 2
+            bubble_y = brief_global_pos.y() - self.about_bubble.sizeHint().height() - 15
+            
+            self.about_bubble.move(bubble_x, bubble_y)
+        
+        # 显示气泡
+        self.about_bubble.show()
+        self.about_bubble.raise_()  # 确保在蒙版之上
+        
+        # 绑定气泡的鼠标事件
+        self.about_bubble.enterEvent = lambda e: self._cancel_bubble_hide()
+        self.about_bubble.leaveEvent = lambda e: self._hide_about_bubble_delayed()
+    
+    def _hide_about_bubble_delayed(self):
+        """延迟隐藏气泡"""
+        if self._bubble_hide_timer:
+            self._bubble_hide_timer.stop()
+        
+        self._bubble_hide_timer = QTimer()
+        self._bubble_hide_timer.setSingleShot(True)
+        self._bubble_hide_timer.timeout.connect(self._hide_about_bubble)
+        self._bubble_hide_timer.start(300)
+    
+    def _cancel_bubble_hide(self):
+        """取消延迟隐藏"""
+        if self._bubble_hide_timer:
+            self._bubble_hide_timer.stop()
+            self._bubble_hide_timer = None
+    
+    def _hide_about_bubble(self):
+        """隐藏气泡"""
+        if self.about_bubble:
+            self.about_bubble.close()
+            self.about_bubble = None
+        
+        # 隐藏蒙版
+        if hasattr(self, 'bubble_overlay') and self.bubble_overlay:
+            self.bubble_overlay.hide()
+    
+    def _show_backup_trend(self):
+        """显示备份趋势图表"""
+        self._clear_content()
+        
+        # 主容器
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(40, 30, 40, 30)
+        layout.setSpacing(20)
+        
+        # 标题
+        title = QLabel("📈 备份趋势分析")
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
+        
+        # 获取统计数据
+        stats = self.db.get_backup_statistics(30)
+        
+        # 创建图表面板
+        chart_panel = QFrame()
+        chart_panel.setObjectName("panel")
+        chart_layout = QVBoxLayout(chart_panel)
+        chart_layout.setContentsMargins(30, 30, 30, 30)
+        
+        if stats['dates']:
+            # 统计信息
+            total_backups = sum(stats['backup_counts'])
+            total_files = sum(stats['file_counts'])
+            avg_files = total_files // total_backups if total_backups > 0 else 0
+            
+            info_text = QLabel(
+                f"最近30天统计\n"
+                f"备份总次数: {total_backups} 次\n"
+                f"文件总数: {total_files} 个\n"
+                f"平均每次: {avg_files} 个文件"
+            )
+            info_text.setObjectName("sectionTitle")
+            chart_layout.addWidget(info_text)
+            
+            # 简单柱状图
+            chart_widget = self._create_bar_chart(stats)
+            chart_layout.addWidget(chart_widget)
+        else:
+            no_data = QLabel("⚠️ 暂无备份数据")
+            no_data.setObjectName("sectionTitle")
+            no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chart_layout.addWidget(no_data)
+        
+        layout.addWidget(chart_panel)
+        
+        # 返回按钮
+        back_btn = QPushButton("← 返回设置")
+        back_btn.setObjectName("primaryBtn")
+        back_btn.setFixedHeight(50)
+        back_btn.clicked.connect(self._show_settings)
+        layout.addWidget(back_btn)
+        
+        self.content_layout.addWidget(container)
+    
+    def _create_bar_chart(self, stats):
+        """创建柱状图"""
+        chart_widget = QFrame()
+        chart_widget.setObjectName("chartFrame")
+        chart_widget.setMinimumHeight(400)
+        
+        # 自定义绘图
+        class BarChartWidget(QWidget):
+            def __init__(self, data, theme='dark', parent=None):
+                super().__init__(parent)
+                self.dates = data['dates']
+                self.file_counts = data['file_counts']
+                self.theme = theme
+                self.setMinimumHeight(350)
+            
+            def paintEvent(self, event):
+                if not self.dates:
+                    return
+                
+                painter = QPainter(self)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                
+                # 计算绘图区域
+                width = self.width()
+                height = self.height()
+                margin = 50
+                chart_width = width - 2 * margin
+                chart_height = height - 2 * margin
+                
+                # 根据主题设置颜色
+                if self.theme == 'light':
+                    bg_color = QColor("#F5F5F5")  # 浅灰色背景
+                    text_color = QColor("#2B2B2B")  # 深色文字
+                    grid_color = QColor("#E0E0E0")  # 网格线
+                else:
+                    bg_color = QColor("#2A2A2A")  # 深色背景
+                    text_color = QColor("#E0E0E0")  # 浅色文字
+                    grid_color = QColor("#404040")  # 网格线
+                
+                # 绘制背景
+                painter.fillRect(margin, margin, chart_width, chart_height, bg_color)
+                
+                # 绘制网格线（水平）
+                painter.setPen(QPen(grid_color, 1))
+                for i in range(5):
+                    y = margin + (chart_height // 4) * i
+                    painter.drawLine(margin, int(y), margin + chart_width, int(y))
+                
+                # 计算数据范围
+                max_value = max(self.file_counts) if self.file_counts else 1
+                bar_width = chart_width // len(self.dates) - 10
+                
+                # 绘制柱子
+                for i, (date, count) in enumerate(zip(self.dates, self.file_counts)):
+                    bar_height = (count / max_value) * chart_height * 0.8
+                    x = margin + i * (chart_width // len(self.dates)) + 5
+                    y = margin + chart_height - bar_height
+                    
+                    # 柱子颜色渐变
+                    gradient_color = QColor(47, 165, 114)  # #2FA572
+                    painter.fillRect(int(x), int(y), bar_width, int(bar_height), gradient_color)
+                    
+                    # 显示数值
+                    painter.setPen(text_color)
+                    painter.setFont(QFont("Microsoft YaHei", 10, QFont.Weight.Bold))
+                    painter.drawText(int(x), int(y - 5), bar_width, 20, 
+                                   Qt.AlignmentFlag.AlignCenter, str(count))
+                    
+                    # 显示日期（更清晰）
+                    painter.setFont(QFont("Microsoft YaHei", 9))
+                    date_str = date[-5:]  # 只显示 MM-DD
+                    painter.drawText(int(x), margin + chart_height + 10, bar_width, 20,
+                                   Qt.AlignmentFlag.AlignCenter, date_str)
+        
+        chart = BarChartWidget(stats, self.current_theme, chart_widget)
+        chart_layout = QVBoxLayout(chart_widget)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
+        chart_layout.addWidget(chart)
+        
+        return chart_widget
+    
+    def _show_storage_analysis(self):
+        """显示存储空间分析"""
+        self._clear_content()
+        
+        # 主容器
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(40, 30, 40, 30)
+        layout.setSpacing(20)
+        
+        # 标题
+        title = QLabel("💾 存储空间分析")
+        title.setObjectName("pageTitle")
+        layout.addWidget(title)
+        
+        # 获取存储统计
+        storage_stats = self.db.get_storage_statistics()
+        
+        # 创建图表面板
+        chart_panel = QFrame()
+        chart_panel.setObjectName("panel")
+        chart_layout = QVBoxLayout(chart_panel)
+        chart_layout.setContentsMargins(30, 30, 30, 30)
+        
+        if storage_stats:
+            # 计算总大小
+            total_size = sum(item['total_size'] for item in storage_stats)
+            total_files = sum(item['file_count'] for item in storage_stats)
+            
+            # 显示总统计
+            info_text = QLabel(
+                f"存储总览\n"
+                f"文件夹数: {len(storage_stats)} 个\n"
+                f"文件总数: {total_files} 个\n"
+                f"占用空间: {FileScanner.format_size(total_size)}"
+            )
+            info_text.setObjectName("sectionTitle")
+            chart_layout.addWidget(info_text)
+            
+            # 顶部间距
+            chart_layout.addSpacing(20)
+            
+            # 饼图
+            pie_chart = self._create_pie_chart(storage_stats, total_size)
+            chart_layout.addWidget(pie_chart)
+            
+            # 详细列表
+            chart_layout.addSpacing(20)
+            details_label = QLabel("📁 详细列表")
+            details_label.setObjectName("sectionTitle")
+            chart_layout.addWidget(details_label)
+            
+            for item in storage_stats:
+                folder_name = os.path.basename(item['folder'])
+                size_str = FileScanner.format_size(item['total_size'])
+                percentage = (item['total_size'] / total_size * 100) if total_size > 0 else 0
+                
+                item_text = QLabel(
+                    f"• {folder_name}\n"
+                    f"  {item['file_count']} 个文件 | {size_str} ({percentage:.1f}%)"
+                )
+                item_text.setObjectName("infoText")
+                chart_layout.addWidget(item_text)
+        else:
+            no_data = QLabel("⚠️ 暂无存储数据")
+            no_data.setObjectName("sectionTitle")
+            no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chart_layout.addWidget(no_data)
+        
+        layout.addWidget(chart_panel)
+        
+        # 返回按钮
+        back_btn = QPushButton("← 返回设置")
+        back_btn.setObjectName("primaryBtn")
+        back_btn.setFixedHeight(50)
+        back_btn.clicked.connect(self._show_settings)
+        layout.addWidget(back_btn)
+        
+        self.content_layout.addWidget(container)
+    
+    def _create_pie_chart(self, storage_stats, total_size):
+        """创建饼图"""
+        chart_widget = QFrame()
+        chart_widget.setObjectName("chartFrame")
+        chart_widget.setMinimumHeight(350)
+        
+        class PieChartWidget(QWidget):
+            def __init__(self, data, total, theme='dark', parent=None):
+                super().__init__(parent)
+                self.data = data
+                self.total = total
+                self.theme = theme
+                self.setMinimumHeight(300)
+                
+                # 颜色方案
+                self.colors = [
+                    QColor(47, 165, 114),   # #2FA572 - 绿色
+                    QColor(31, 106, 165),   # #1F6AA5 - 蓝色
+                    QColor(232, 17, 35),    # #E81123 - 红色
+                    QColor(255, 185, 0),    # #FFB900 - 黄色
+                    QColor(142, 68, 173),   # #8E44AD - 紫色
+                ]
+            
+            def paintEvent(self, event):
+                if not self.data or self.total == 0:
+                    return
+                
+                painter = QPainter(self)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                
+                # 根据主题设置边框颜色
+                if self.theme == 'light':
+                    border_color = QColor("#FFFFFF")  # 白色边框
+                else:
+                    border_color = QColor("#1A1A1A")  # 深色边框
+                
+                # 计算中心和半径
+                width = self.width()
+                height = self.height()
+                center_x = width // 2
+                center_y = height // 2
+                radius = min(width, height) // 3
+                
+                # 绘制饼图
+                start_angle = 0
+                for i, item in enumerate(self.data):
+                    percentage = item['total_size'] / self.total
+                    span_angle = int(percentage * 360 * 16)  # Qt 使用 1/16 度
+                    
+                    color = self.colors[i % len(self.colors)]
+                    painter.setBrush(QBrush(color))
+                    painter.setPen(QPen(border_color, 2))
+                    
+                    # 绘制扇形
+                    rect = QRectF(center_x - radius, center_y - radius, 
+                                 radius * 2, radius * 2)
+                    painter.drawPie(rect, start_angle, span_angle)
+                    
+                    start_angle += span_angle
+        
+        chart = PieChartWidget(storage_stats, total_size, self.current_theme, chart_widget)
+        chart_layout = QVBoxLayout(chart_widget)
+        chart_layout.setContentsMargins(0, 0, 0, 0)
+        chart_layout.addWidget(chart)
+        
+        return chart_widget
 
 
 def main():

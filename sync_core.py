@@ -9,6 +9,8 @@ import shutil
 import zipfile
 from datetime import datetime
 from file_scanner import FileScanner
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 
 def get_app_dir():
@@ -38,8 +40,10 @@ def get_app_dir():
 class SyncCore:
     """同步核心逻辑"""
     
-    def __init__(self, db):
+    def __init__(self, db, max_workers=4):
         self.db = db
+        self.max_workers = max_workers  # 最大线程数
+        self._lock = threading.Lock()  # 线程锁
     
     def create_backup_package(self, base_folder, files_list, sync_type='diff', output_dir=None):
         """
@@ -235,6 +239,136 @@ class SyncCore:
                     if callback:
                         status = '冲突' if has_conflict else '成功'
                         callback(idx + 1, total, filename, status)
+        
+        finally:
+            # 清理临时目录
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+        
+        return {
+            'success': success_files,
+            'conflicts': conflict_files
+        }
+    
+    def sync_to_folder_parallel(self, archive_path, target_folder, callback=None):
+        """
+        多线程并发同步到目标文件夹（优化性能）
+        
+        Args:
+            archive_path: 压缩包路径
+            target_folder: 目标文件夹路径
+            callback: 回调函数 callback(current, total, filename, status)
+        
+        Returns:
+            dict: 包含成功、冲突文件列表的字典
+        """
+        if not os.path.exists(archive_path):
+            return {'success': [], 'conflicts': []}
+        
+        # 创建临时解压目录
+        temp_dir = os.path.join(os.path.dirname(archive_path), 'temp_extract')
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        os.makedirs(temp_dir)
+        
+        success_files = []
+        conflict_files = []
+        processed_count = [0]  # 使用列表使其可变
+        
+        try:
+            # 解压文件
+            with zipfile.ZipFile(archive_path, 'r') as zipf:
+                file_list = [f for f in zipf.namelist() if f != 'sync_manifest.txt']
+                total = len(file_list)
+                
+                # 先解压所有文件
+                zipf.extractall(temp_dir)
+                
+                def process_file(filename):
+                    """处理单个文件的同步"""
+                    source_file = os.path.join(temp_dir, filename)
+                    target_file = os.path.join(target_folder, filename)
+                    
+                    # 检查目标文件是否存在且已修改
+                    has_conflict = False
+                    if os.path.exists(target_file):
+                        # 计算MD5检查是否冲突
+                        source_md5 = FileScanner.calculate_md5(source_file)
+                        target_md5 = FileScanner.calculate_md5(target_file)
+                        
+                        if source_md5 != target_md5:
+                            # MD5不同，需要检查是谁更新了
+                            db_record = self.db.get_file_info(target_file)
+                            
+                            if db_record and db_record['md5_hash']:
+                                if db_record['md5_hash'] == source_md5:
+                                    has_conflict = True  # A端没变，B端变了
+                                elif db_record['md5_hash'] == target_md5:
+                                    has_conflict = False  # B端没变，A端变了
+                                else:
+                                    has_conflict = True  # 双方都变了
+                            else:
+                                has_conflict = False  # 默认A端更新
+                            
+                            if has_conflict:
+                                # B端有修改，移到差异文件夹
+                                with self._lock:
+                                    conflict_dir = os.path.join(target_folder, '差异文件夹', 
+                                                               datetime.now().strftime('%Y%m%d_%H%M%S'))
+                                    if not os.path.exists(conflict_dir):
+                                        os.makedirs(conflict_dir)
+                                    
+                                    conflict_target = os.path.join(conflict_dir, filename)
+                                    os.makedirs(os.path.dirname(conflict_target), exist_ok=True)
+                                    shutil.copy2(source_file, conflict_target)
+                                    
+                                    conflict_files.append({
+                                        'file': filename,
+                                        'source_md5': source_md5,
+                                        'target_md5': target_md5,
+                                        'conflict_path': conflict_target
+                                    })
+                                    
+                                    self.db.add_conflict(target_file, source_md5, target_md5)
+                    
+                    if not has_conflict:
+                        # 没有冲突，直接复制
+                        os.makedirs(os.path.dirname(target_file), exist_ok=True)
+                        shutil.copy2(source_file, target_file)
+                        
+                        with self._lock:
+                            success_files.append(filename)
+                            
+                            # 更新数据库记录
+                            stat = os.stat(target_file)
+                            source_md5 = FileScanner.calculate_md5(source_file)
+                            relative_path = os.path.relpath(target_file, target_folder)
+                            self.db.update_file_info(
+                                target_file,
+                                relative_path,
+                                target_folder,
+                                stat.st_size,
+                                stat.st_mtime,
+                                source_md5
+                            )
+                    
+                    # 更新进度
+                    with self._lock:
+                        processed_count[0] += 1
+                        if callback:
+                            status = '冲突' if has_conflict else '成功'
+                            callback(processed_count[0], total, filename, status)
+                
+                # 使用线程池并发处理
+                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    futures = [executor.submit(process_file, filename) for filename in file_list]
+                    
+                    # 等待所有任务完成
+                    for future in as_completed(futures):
+                        try:
+                            future.result()
+                        except Exception as e:
+                            print(f"处理文件错误: {e}")
         
         finally:
             # 清理临时目录

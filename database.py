@@ -229,3 +229,82 @@ class Database:
     def set_last_sync_target(self, folder):
         """保存同步目标文件夹"""
         self.set_config('last_sync_target', folder)
+    
+    def get_sync_folders(self):
+        """获取上次选择的同步文件夹列表"""
+        import json
+        folders_json = self.get_config('sync_folders', '[]')
+        try:
+            return json.loads(folders_json)
+        except:
+            return []
+    
+    def set_sync_folders(self, folders):
+        """保存同步文件夹列表"""
+        import json
+        self.set_config('sync_folders', json.dumps(folders))
+    
+    # ==================== 统计数据 ====================
+    
+    def get_backup_statistics(self, days=30):
+        """
+        获取备份统计数据
+        
+        Args:
+            days: 统计最近多少天的数据
+        
+        Returns:
+            dict: 包含日期、文件数量、备份次数的统计数据
+        """
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        
+        # 获取最近N天的备份历史
+        cursor.execute('''
+            SELECT 
+                DATE(sync_time) as date,
+                COUNT(*) as backup_count,
+                SUM(file_count) as total_files
+            FROM sync_history
+            WHERE sync_time >= datetime('now', '-' || ? || ' days')
+            GROUP BY DATE(sync_time)
+            ORDER BY date ASC
+        ''', (days,))
+        
+        results = cursor.fetchall()
+        
+        return {
+            'dates': [row['date'] for row in results],
+            'backup_counts': [row['backup_count'] for row in results],
+            'file_counts': [row['total_files'] for row in results]
+        }
+    
+    def get_storage_statistics(self):
+        """
+        获取存储空间统计数据
+        
+        Returns:
+            dict: 包含各文件夹的存储统计
+        """
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                base_folder,
+                COUNT(*) as file_count,
+                SUM(file_size) as total_size
+            FROM file_info
+            GROUP BY base_folder
+        ''')
+        
+        results = cursor.fetchall()
+        
+        return [
+            {
+                'folder': row['base_folder'],
+                'file_count': row['file_count'],
+                'total_size': row['total_size'] or 0
+            }
+            for row in results
+        ]
