@@ -8,6 +8,7 @@ import threading
 import os
 import sys
 import platform
+from PIL import Image, ImageDraw
 from database import Database
 from file_scanner import FileScanner
 from sync_core import SyncCore
@@ -55,9 +56,20 @@ class ModernSyncGUI(ctk.CTk):
         # 使用 overrideredirect 实现无边框
         self.overrideredirect(True)
         
-        # Windows 上设置为工具窗口以显示在任务栏
+        # 设置窗口透明色键
+        self.attributes('-transparentcolor', '#010101')
+        
+        # 设置圆角半径
+        self.corner_radius = 20
+        
+        # 设置窗口圆角（跨平台）
         if platform.system() == 'Windows':
             self.after(10, self._setup_taskbar_icon)
+            # 设置圆角窗口
+            self.after(20, self._apply_rounded_corners)
+        elif platform.system() == 'Darwin':  # macOS
+            # macOS 圆角窗口设置
+            self.after(20, self._apply_rounded_corners)
         
         # 窗口拖动变量
         self._drag_start_x = 0
@@ -79,15 +91,121 @@ class ModernSyncGUI(ctk.CTk):
         self.scan_results = []
         self.changed_files = []
         
+        # 创建圆角背景容器
+        self._create_rounded_container()
+        
         # 创建自定义标题栏
         self._create_titlebar()
         
         # 创建模式选择界面
         self._create_mode_selection()
         
-        # Windows 上设置为工具窗口以显示在任务栏
+        # 绑定窗口大小变化事件以更新圆角
+        self.bind('<Configure>', self._on_window_configure)
+    
+    def _create_rounded_container(self):
+        """
+        创建圆角背景容器
+        """
+        # 创建主背景框架,使用透明色作为背景
+        self.configure(bg='#010101')
+        
+        # 创建实际内容容器,带圆角
+        self.content_frame = ctk.CTkFrame(
+            self,
+            corner_radius=self.corner_radius,
+            fg_color=("#F0F0F0", "#1A1A1A"),
+            border_width=0
+        )
+        # 留出一些边距让圆角更明显
+        self.content_frame.pack(fill="both", expand=True, padx=2, pady=2)
+    
+    def _on_window_configure(self, event=None):
+        """
+        窗口大小变化时更新圆角遮罩
+        """
+        pass  # content_frame 使用 pack 布局自动调整
+    
+    def _apply_rounded_corners(self):
+        """
+        应用圆角窗口（跨平台支持）
+        """
         if platform.system() == 'Windows':
-            self.after(10, self._setup_taskbar_icon)
+            self._apply_windows_rounded_corners()
+        elif platform.system() == 'Darwin':  # macOS
+            self._apply_macos_rounded_corners()
+    
+    def _apply_windows_rounded_corners(self):
+        """
+        应用 Windows 11 风格的圆角窗口
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+            
+            # 获取窗口句柄
+            hwnd = ctypes.windll.user32.FindWindowW(None, self.title())
+            if not hwnd:
+                return
+            
+            # Windows 11 DWM 圆角 API
+            # DWM_WINDOW_CORNER_PREFERENCE
+            DWMWA_WINDOW_CORNER_PREFERENCE = 33
+            DWMWCP_ROUND = 2  # 圆角 (1=小圆角, 2=标准圆角, 3=大圆角)
+            
+            # 设置圆角属性
+            preference = ctypes.c_int(DWMWCP_ROUND)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                ctypes.byref(preference),
+                ctypes.sizeof(preference)
+            )
+            
+            # 额外: 设置窗口阴影
+            DWMWA_NCRENDERING_POLICY = 2
+            DWMNCRP_ENABLED = 2
+            rendering = ctypes.c_int(DWMNCRP_ENABLED)
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_NCRENDERING_POLICY,
+                ctypes.byref(rendering),
+                ctypes.sizeof(rendering)
+            )
+            
+        except Exception as e:
+            print(f"Windows 设置圆角窗口失败: {e}")
+    
+    def _apply_macos_rounded_corners(self):
+        """
+        应用 macOS 风格的圆角窗口
+        """
+        try:
+            # macOS 的窗口默认就有圆角，但我们可以增强效果
+            # 对于 overrideredirect 窗口，需要特殊处理
+            
+            # 获取 Tk 窗口的 NSWindow 对象
+            from tkinter import _tkinter
+            
+            # 设置窗口样式为圆角
+            # macOS 上 overrideredirect 窗口默认已经是圆角的
+            # 我们主要确保窗口有阴影效果
+            
+            # 设置窗口阴影
+            try:
+                # 使用 tkinter 的 wm 命令设置阴影
+                # 对于 overrideredirect 窗口，macOS 会自动应用圆角
+                self.update_idletasks()
+                
+                # macOS 的圆角和阴影是系统默认行为
+                # 只要确保 content_frame 的圆角设置正确即可
+                print("macOS: 圆角窗口已启用")
+                
+            except Exception as inner_e:
+                print(f"macOS 阴影设置失败: {inner_e}")
+                
+        except Exception as e:
+            print(f"macOS 设置圆角窗口失败: {e}")
     
     def _setup_taskbar_icon(self):
         """
@@ -120,7 +238,7 @@ class ModernSyncGUI(ctk.CTk):
     def _create_titlebar(self):
         """创建自定义标题栏"""
         self.titlebar = ctk.CTkFrame(
-            self,
+            self.content_frame,
             height=45,
             corner_radius=0,
             fg_color=("#E0E0E0", "#1E1E1E")
@@ -152,7 +270,7 @@ class ModernSyncGUI(ctk.CTk):
             text="—",
             width=40,
             height=30,
-            corner_radius=6,
+            corner_radius=8,
             fg_color="transparent",
             text_color=("#2B2B2B", "#E0E0E0"),  # 浅色模式用深色，深色模式用浅色
             hover_color=("#D0D0D0", "#2A2A2A"),
@@ -166,7 +284,7 @@ class ModernSyncGUI(ctk.CTk):
             text="□",
             width=40,
             height=30,
-            corner_radius=6,
+            corner_radius=8,
             fg_color="transparent",
             text_color=("#2B2B2B", "#E0E0E0"),  # 浅色模式用深色，深色模式用浅色
             hover_color=("#D0D0D0", "#2A2A2A"),
@@ -180,7 +298,7 @@ class ModernSyncGUI(ctk.CTk):
             text="✕",
             width=40,
             height=30,
-            corner_radius=6,
+            corner_radius=8,
             fg_color="transparent",
             text_color=("#2B2B2B", "#E0E0E0"),  # 浅色模式用深色，深色模式用浅色
             hover_color=("#E81123", "#C42B1C"),
@@ -217,8 +335,8 @@ class ModernSyncGUI(ctk.CTk):
     
     def _create_mode_selection(self):
         """创建模式选择界面"""
-        # 清空窗口（保留标题栏）
-        for widget in self.winfo_children():
+        # 清空窗口（保留标题栏和背景容器）
+        for widget in self.content_frame.winfo_children():
             if widget != self.titlebar:
                 widget.destroy()
         
@@ -226,7 +344,7 @@ class ModernSyncGUI(ctk.CTk):
         self.title_label.configure(text="📦 文件同步工具")
         
         # 主容器
-        main_container = ctk.CTkFrame(self, fg_color="transparent")
+        main_container = ctk.CTkFrame(self.content_frame, fg_color="transparent")
         main_container.pack(fill="both", expand=True, padx=40, pady=(20, 40))
         
         # 标题
@@ -257,7 +375,7 @@ class ModernSyncGUI(ctk.CTk):
             font=ctk.CTkFont(family="微软雅黑", size=20, weight="bold"),
             width=220,
             height=100,
-            corner_radius=15,
+            corner_radius=20,
             fg_color=("#2CC985", "#2FA572"),
             hover_color=("#28B573", "#268F5F"),
             command=lambda: self._switch_mode('backup')
@@ -271,7 +389,7 @@ class ModernSyncGUI(ctk.CTk):
             font=ctk.CTkFont(family="微软雅黑", size=20, weight="bold"),
             width=220,
             height=100,
-            corner_radius=15,
+            corner_radius=20,
             fg_color=("#3B8ED0", "#1F6AA5"),
             hover_color=("#2E7AB8", "#175A8A"),
             command=lambda: self._switch_mode('sync')
@@ -279,7 +397,7 @@ class ModernSyncGUI(ctk.CTk):
         sync_btn.grid(row=0, column=1, padx=25)
         
         # 说明卡片
-        info_frame = ctk.CTkFrame(main_container, corner_radius=15)
+        info_frame = ctk.CTkFrame(main_container, corner_radius=20)
         info_frame.pack(pady=40, padx=100, fill="x")
         
         # 备份模式说明
@@ -320,7 +438,7 @@ class ModernSyncGUI(ctk.CTk):
         
         # 底部版本信息
         version_label = ctk.CTkLabel(
-            self,
+            self.content_frame,
             text="v2.0 Modern Edition\nCopyright © 2026 Fenwick All Rights Reserved",
             font=ctk.CTkFont(family="微软雅黑", size=11),
             text_color=("gray60", "gray40")
@@ -337,8 +455,8 @@ class ModernSyncGUI(ctk.CTk):
     
     def _create_backup_interface(self):
         """创建备份模式界面"""
-        # 清空窗口（保留标题栏）
-        for widget in self.winfo_children():
+        # 清空窗口（保留标题栏和背景容器）
+        for widget in self.content_frame.winfo_children():
             if widget != self.titlebar:
                 widget.destroy()
         
@@ -352,7 +470,7 @@ class ModernSyncGUI(ctk.CTk):
         self._create_navbar()
         
         # 主容器 - 使用grid布局
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
         main_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         main_frame.grid_columnconfigure(0, weight=1, minsize=350)  # 左侧面板固定最小宽度
         main_frame.grid_columnconfigure(1, weight=2)  # 右侧面板更宽
@@ -492,8 +610,8 @@ class ModernSyncGUI(ctk.CTk):
     
     def _create_sync_interface(self):
         """创建同步模式界面"""
-        # 清空窗口（保留标题栏）
-        for widget in self.winfo_children():
+        # 清空窗口（保留标题栏和背景容器）
+        for widget in self.content_frame.winfo_children():
             if widget != self.titlebar:
                 widget.destroy()
         
@@ -504,7 +622,7 @@ class ModernSyncGUI(ctk.CTk):
         self._create_navbar()
         
         # 主容器
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        main_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
         main_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         main_frame.grid_columnconfigure(0, weight=1, minsize=350)  # 左侧面板固定最小宽度
         main_frame.grid_columnconfigure(1, weight=2)  # 右侧面板更宽
@@ -616,7 +734,7 @@ class ModernSyncGUI(ctk.CTk):
             text="🔄 开始同步",
             font=ctk.CTkFont(family="微软雅黑", size=18, weight="bold"),
             height=80,
-            corner_radius=15,
+            corner_radius=20,
             fg_color=("#2CC985", "#2FA572"),
             hover_color=("#28B573", "#268F5F"),
             command=self._perform_sync
@@ -624,7 +742,7 @@ class ModernSyncGUI(ctk.CTk):
         sync_btn.pack(fill="x", padx=20, pady=(0, 20))
         
         # 说明卡片
-        info_card = ctk.CTkFrame(right_panel, corner_radius=10, fg_color=("#E8F4FD", "#1A3A52"))
+        info_card = ctk.CTkFrame(right_panel, corner_radius=15, fg_color=("#E8F4FD", "#1A3A52"))
         info_card.pack(fill="x", padx=20, pady=(0, 20))
         
         info_title = ctk.CTkLabel(
@@ -664,7 +782,7 @@ class ModernSyncGUI(ctk.CTk):
     
     def _create_navbar(self):
         """创建顶部导航栏"""
-        navbar = ctk.CTkFrame(self, height=60, corner_radius=0, fg_color=("#DBDBDB", "#2B2B2B"))
+        navbar = ctk.CTkFrame(self.content_frame, height=60, corner_radius=0, fg_color=("#DBDBDB", "#2B2B2B"))
         navbar.pack(fill="x", padx=0, pady=(0, 15))  # 添加下边距
         navbar.pack_propagate(False)
         
