@@ -214,9 +214,42 @@ class ModernSyncGUI(ctk.CTk):
         """
         try:
             import ctypes
+            from ctypes import wintypes
+            
             # 获取窗口句柄
             hwnd = ctypes.windll.user32.FindWindowW(None, self.title())
             if hwnd:
+                # 设置窗口图标
+                try:
+                    # 获取图标文件路径
+                    icon_path = os.path.join(get_app_dir(), 'icon.ico')
+                    if os.path.exists(icon_path):
+                        # 加载图标
+                        IMAGE_ICON = 1
+                        LR_LOADFROMFILE = 0x00000010
+                        LR_DEFAULTSIZE = 0x00000040
+                        
+                        # 加载大图标和小图标
+                        hicon_big = ctypes.windll.user32.LoadImageW(
+                            None, icon_path, IMAGE_ICON, 
+                            0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE
+                        )
+                        hicon_small = ctypes.windll.user32.LoadImageW(
+                            None, icon_path, IMAGE_ICON,
+                            16, 16, LR_LOADFROMFILE
+                        )
+                        
+                        # 设置窗口图标
+                        WM_SETICON = 0x0080
+                        ICON_BIG = 1
+                        ICON_SMALL = 0
+                        if hicon_big:
+                            ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon_big)
+                        if hicon_small:
+                            ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
+                except Exception as icon_error:
+                    print(f"设置窗口图标失败: {icon_error}")
+                
                 # 获取当前扩展样式
                 GWL_EXSTYLE = -20
                 ex_style = ctypes.windll.user32.GetWindowLongPtrW(hwnd, GWL_EXSTYLE)

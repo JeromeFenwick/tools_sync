@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QGridLayout, QSizePolicy, QProgressBar
 )
 from PyQt6.QtCore import Qt, QPoint, QPropertyAnimation, QEasingCurve, pyqtSignal, QTimer
-from PyQt6.QtGui import QPalette, QColor, QPainter, QPainterPath, QRegion, QFont
+from PyQt6.QtGui import QPalette, QColor, QPainter, QPainterPath, QRegion, QFont, QIcon
 from database import Database
 from file_scanner import FileScanner
 from sync_core import SyncCore
@@ -120,6 +120,9 @@ class ModernSyncGUI(RoundedWindow):
         # 创建UI
         self._create_ui()
         
+        # 设置窗口图标
+        self._set_window_icon()
+        
     def closeEvent(self, event):
         """窗口关闭事件"""
         try:
@@ -128,6 +131,17 @@ class ModernSyncGUI(RoundedWindow):
         except Exception as e:
             print(f"关闭错误: {e}")
             event.accept()
+    
+    def _set_window_icon(self):
+        """设置窗口图标"""
+        try:
+            icon_path = os.path.join(get_app_dir(), 'icon.ico')
+            if os.path.exists(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+            else:
+                print(f"图标文件不存在: {icon_path}")
+        except Exception as e:
+            print(f"设置窗口图标失败: {e}")
     
     def _create_ui(self):
         """创建主UI"""
